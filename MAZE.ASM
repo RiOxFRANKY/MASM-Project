@@ -6,121 +6,90 @@ level   db 0
 prow    db 1
 pcol    db 1
 msglvl  db 'Level $'
-msgrow  db '   Row $'
-msgcol  db '   Col $'
-msghelp db 'Arrows/WASD = Move   E = Exit   ESC = Quit$'
-msgwin  db 'You finished all 10 levels!$'
-crlf    db 13,10,'$'
+msgrow  db 'Row   $'
+msgcol  db 'Col   $'
+msgkey  db 'Arrows/WASD = Move$'
+msgend  db 'E = Exit$'
+msgesc  db 'ESC = Quit$'
+msgwin  db 'You finished all 3 levels!$'
 
-mazes   db '####################'
-        db '#     #            #'
-        db '# ### # ########## #'
-        db '# #   #          # #'
-        db '# # ######## ### # #'
-        db '# #        # #   # #'
-        db '# ######## # # ### #'
-        db '#        # # #   # #'
-        db '######## #   ### #E#'
-        db '####################'
+mazes   db '#########################'
+        db '#       #             # #'
+        db '####### # ##### # # # # #'
+        db '# #   # # #     # # #   #'
+        db '# # # # # # # # # # #####'
+        db '#   #   #   # #   #     #'
+        db '# ######## #### ####### #'
+        db '# #   #       #       # #'
+        db '# # # # ##### # ####### #'
+        db '# # # #   #     #     # #'
+        db '# # # # # # ### # ### # #'
+        db '#   # # # #   # #   #   #'
+        db '### # ### ### # # # ### #'
+        db '#   # #   #   # #   #   #'
+        db '### # # ### ### # ##### #'
+        db '#   # #   # #   #     # #'
+        db '# # # # #   # ##### # # #'
+        db '# #     # # # #   # # # #'
+        db '# # ### # #   # # ### # #'
+        db '#       #   # # # #   # #'
+        db '# ####### ##### # # ### #'
+        db '#   #   #   #   # # #   #'
+        db '# # # # ### # ### # # ###'
+        db '# #   #       #     #  E#'
+        db '#########################'
 
-        db '####################'
-        db '#   #      #       #'
-        db '# # # #### # ##### #'
-        db '# #   #    #     # #'
-        db '# ##### ######## # #'
-        db '#     #        # # #'
-        db '##### # ###### # # #'
-        db '#     #      #   # #'
-        db '# ########## #####E#'
-        db '####################'
+        db '#########################'
+        db '# #   #           #     #'
+        db '# ### # ##### # ### # # #'
+        db '# #   #   #   # #   #   #'
+        db '# # ### # # ##### ##### #'
+        db '# #     #   #   # #   # #'
+        db '# ####### # # # # # # # #'
+        db '#   #   # # # #     #   #'
+        db '### # # # # # # ### # # #'
+        db '#   # #   # # #   # # # #'
+        db '# ### # ##### ### # # ###'
+        db '#   # # #     # # # #   #'
+        db '### # ### ##### # # ### #'
+        db '# # #     #     #   #   #'
+        db '# # ### ####### ##### ###'
+        db '# #   #       #     #   #'
+        db '# ### ####### # # # ### #'
+        db '#   #     # # # #   #   #'
+        db '# # ##### # # # ### # ###'
+        db '# # #     #     #   #   #'
+        db '# ### ################# #'
+        db '# #   #         #     # #'
+        db '# # ### ####### # ### # #'
+        db '#       #         #    E#'
+        db '#########################'
 
-        db '####################'
-        db '# #     #     #    #'
-        db '# # ### # ### # ## #'
-        db '#   #   #   #    # #'
-        db '##### ##### ###### #'
-        db '#   #     #      # #'
-        db '# # ##### # #### # #'
-        db '# #     #   #  # # #'
-        db '# ##### ##### ##  E#'
-        db '####################'
-
-        db '####################'
-        db '#      #     #     #'
-        db '###### # ### # ### #'
-        db '#    # #   # #   # #'
-        db '# ## # ### # ### # #'
-        db '# #  #     #   # # #'
-        db '# # ##### # ### # ##'
-        db '# #     # #        #'
-        db '# ##### #   # ####E#'
-        db '####################'
-
-        db '####################'
-        db '#   #       #      #'
-        db '# # # # # # # # # ##'
-        db '# # # # # # # # #  #'
-        db '# # # # # # # # ## #'
-        db '# # # # # # # # #  #'
-        db '# # # # # # # # # ##'
-        db '# # # # # # # # #  #'
-        db '#       #       # E#'
-        db '####################'
-
-        db '####################'
-        db '#        #         #'
-        db '# ###### # ####### #'
-        db '# #    # #       # #'
-        db '# # ## # ####### # #'
-        db '# #  # #       # # #'
-        db '# ## # ####### # # #'
-        db '#    #             #'
-        db '################# E#'
-        db '####################'
-
-        db '####################'
-        db '# #   #   #   #    #'
-        db '# # # # # # # # ## #'
-        db '#   # # # # # #  # #'
-        db '##### # # # # ## # #'
-        db '#     #   #   #  # #'
-        db '# ################ #'
-        db '#                  #'
-        db '################# E#'
-        db '####################'
-
-        db '####################'
-        db '#    #    #    #   #'
-        db '# ## # ## # ## # # #'
-        db '# #  # #  # #  # # #'
-        db '# # ## # ## # ## # #'
-        db '# #    #    #    # #'
-        db '# ############### ##'
-        db '#   #   #   #   #  #'
-        db '# #   #   #   #   E#'
-        db '####################'
-
-        db '####################'
-        db '#  #     #   #     #'
-        db '## # ### # # # ### #'
-        db '#  # # #   #   # # #'
-        db '# ## # ####### # # #'
-        db '#    #       # # # #'
-        db '###### ##### # # # #'
-        db '#    #   #   # #   #'
-        db '# ##   # # ### ###E#'
-        db '####################'
-
-        db '####################'
-        db '# #    #      #    #'
-        db '# # ## # #### # ## #'
-        db '#   #  #    # # #  #'
-        db '### # ##### # # # ##'
-        db '#   #     # #   #  #'
-        db '# ####### # ###### #'
-        db '#       #          #'
-        db '####### # ########E#'
-        db '####################'
+        db '#########################'
+        db '# #         #     # #   #'
+        db '# # ####### # ### # # # #'
+        db '# # #     #   #   #   # #'
+        db '# # ### ####### ####### #'
+        db '#   #   #     #         #'
+        db '##### ### # ########### #'
+        db '#         #     #     # #'
+        db '# ############# # ### # #'
+        db '#   #         #   # # # #'
+        db '### # ### ######### # # #'
+        db '#   #   # #         #   #'
+        db '# ### # ### # ###########'
+        db '# #   #     #     #     #'
+        db '# ########### ### # ### #'
+        db '#           #   #   #   #'
+        db '########### ### ##### # #'
+        db '#   #     # #   #   # # #'
+        db '# # ##### # # ### # # # #'
+        db '# #     # # # #   # # # #'
+        db '# ##### # # # # ### # ###'
+        db '# #       # # # #   #   #'
+        db '# ######### ### # ##### #'
+        db '#               #      E#'
+        db '#########################'
 
 .code
 main proc
@@ -179,14 +148,13 @@ move:
     cmp al,'E'
     jne game
     inc level
-    cmp level,10
+    cmp level,3
     jb newlevel
 
     mov ax,0003h
     int 10h
     lea dx,msgwin
-    mov ah,9
-    int 21h
+    call print
 
 quit:
     mov ah,4Ch
@@ -196,11 +164,11 @@ main endp
 getcell proc
     mov al,level
     mov ah,0
-    mov cx,200
+    mov cx,625
     mul cx
     mov si,ax
     mov al,bl
-    mov cl,20
+    mov cl,25
     mul cl
     add si,ax
     mov al,bh
@@ -231,64 +199,90 @@ print proc
     ret
 print endp
 
+setcur proc
+    mov ah,2
+    mov bh,0
+    int 10h
+    ret
+setcur endp
+
 draw proc
     mov ax,0003h
     int 10h
 
-    lea dx,msglvl
-    call print
-    mov al,level
-    inc al
-    call pnum
-    lea dx,msgrow
-    call print
-    mov al,prow
-    call pnum
-    lea dx,msgcol
-    call print
-    mov al,pcol
-    call pnum
-    lea dx,crlf
-    call print
-
     mov al,level
     mov ah,0
-    mov cx,200
+    mov cx,625
     mul cx
     mov si,ax
-    mov ch,10
+    mov dh,0
 nextrow:
-    mov cl,20
+    mov dl,0
+    call setcur
+    mov cx,25
 nextcol:
     mov dl,mazes[si]
     mov ah,2
     int 21h
     inc si
-    dec cl
-    jnz nextcol
-    lea dx,crlf
-    call print
-    dec ch
-    jnz nextrow
-
-    lea dx,msghelp
-    call print
-
-    mov ah,2
-    mov bh,0
-    mov dh,prow
+    loop nextcol
     inc dh
+    cmp dh,25
+    jb nextrow
+
+    mov dh,2
+    mov dl,30
+    call setcur
+    lea dx,msglvl
+    call print
+    mov al,level
+    inc al
+    call pnum
+
+    mov dh,4
+    mov dl,30
+    call setcur
+    lea dx,msgrow
+    call print
+    mov al,prow
+    call pnum
+
+    mov dh,5
+    mov dl,30
+    call setcur
+    lea dx,msgcol
+    call print
+    mov al,pcol
+    call pnum
+
+    mov dh,8
+    mov dl,30
+    call setcur
+    lea dx,msgkey
+    call print
+
+    mov dh,9
+    mov dl,30
+    call setcur
+    lea dx,msgend
+    call print
+
+    mov dh,10
+    mov dl,30
+    call setcur
+    lea dx,msgesc
+    call print
+
+    mov dh,prow
     mov dl,pcol
-    int 10h
+    call setcur
     mov ah,2
     mov dl,'@'
     int 21h
 
-    mov ah,2
-    mov bh,0
-    mov dh,13
-    mov dl,0
-    int 10h
+    mov dh,12
+    mov dl,30
+    call setcur
     ret
 draw endp
 

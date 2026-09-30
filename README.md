@@ -1,6 +1,6 @@
 # MASM Maze
 
-`MAZE.ASM` is a 16-bit DOS maze game with 10 levels.
+`MAZE.ASM` is a 16-bit DOS maze game with 3 levels on a 25x25 grid.
 
 - `#` is a wall, `@` is the player, `E` is the exit.
 - Move with the arrow keys (or W A S D). Press ESC to quit.
