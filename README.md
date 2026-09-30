@@ -15,3 +15,6 @@ MAZE
 ```
 
 Or with JWasm: `jwasm -mz MAZE.ASM`
+
+# Problem Statement
+Write a MASM program to draw a simple maze using the # character to represent walls and empty spaces for paths. Place a player character (e.g., @) at a defined starting point in the maze. Allow the user to navigate the maze using the arrow keys (Up, Down, Left, Right) by handling keyboard interrupts. Ensure the player cannot move through walls (#) and can only move along valid paths. Continuously update and store the player's current position, and refresh the maze view after each move
