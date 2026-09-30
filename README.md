@@ -1,14 +1,19 @@
 # MASM Maze
 
-`MAZE.ASM` is a 16-bit DOS maze game with 3 levels on a 25x25 grid.
+`Code/MAZE.ASM` is a 16-bit DOS maze game with 3 levels on a 25x25 grid.
 
 - `#` is a wall, `@` is the player, `E` is the exit.
 - Move with the arrow keys (or W A S D). Press ESC to quit.
 - Reach `E` to go to the next level.
 
+## Problem Statement
+Write a MASM program to draw a simple maze using the # character to represent walls and empty spaces for paths. Place a player character (e.g., @) at a defined starting point in the maze. Allow the user to navigate the maze using the arrow keys (Up, Down, Left, Right) by handling keyboard interrupts. Ensure the player cannot move through walls (#) and can only move along valid paths. Continuously update and store the player's current position, and refresh the maze view after each move.
+
 ## Build and run
 
 ### MASM + LINK (in DOSBox)
+
+Run these from inside the `Code` folder.
 
 ```
 masm MAZE.ASM;
@@ -18,13 +23,14 @@ MAZE
 
 ### JWasm + DOSBox on Linux
 
-A DOS `.EXE` cannot run directly on Linux, so it is run inside DOSBox. On Ubuntu or Debian:
+A DOS `.EXE` cannot run directly on Linux, so it is run inside DOSBox. On Ubuntu or Debian, from the repository root:
 
 ```
 sudo apt install dosbox build-essential git
 git clone https://github.com/Baron-von-Riedesel/JWasm.git
 make -C JWasm -f GccUnix.mak
-./JWasm/build/GccUnixR/jwasm -mz MAZE.ASM
+cd Code
+../JWasm/build/GccUnixR/jwasm -mz MAZE.ASM
 dosbox MAZE.EXE
 ```
 
