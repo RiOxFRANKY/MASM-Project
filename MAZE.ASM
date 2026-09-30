@@ -8,7 +8,7 @@ pcol    db 1
 msglvl  db 'Level $'
 msgrow  db '   Row $'
 msgcol  db '   Col $'
-msghelp db 'Arrows = Move   E = Exit   ESC = Quit$'
+msghelp db 'Arrows/WASD = Move   E = Exit   ESC = Quit$'
 msgwin  db 'You finished all 10 levels!$'
 crlf    db 13,10,'$'
 
@@ -137,24 +137,40 @@ game:
     int 16h
     mov bl,prow
     mov bh,pcol
+    cmp al,27
+    je quit
     cmp ah,01h
     je quit
+    or al,20h
     cmp ah,48h
-    jne notup
-    dec bl
-notup:
+    je goup
+    cmp al,'w'
+    je goup
     cmp ah,50h
-    jne notdown
-    inc bl
-notdown:
+    je godown
+    cmp al,'s'
+    je godown
     cmp ah,4Bh
-    jne notleft
-    dec bh
-notleft:
+    je goleft
+    cmp al,'a'
+    je goleft
     cmp ah,4Dh
-    jne notright
+    je goright
+    cmp al,'d'
+    je goright
+    jmp game
+goup:
+    dec bl
+    jmp move
+godown:
+    inc bl
+    jmp move
+goleft:
+    dec bh
+    jmp move
+goright:
     inc bh
-notright:
+move:
     call getcell
     cmp al,'#'
     je game
