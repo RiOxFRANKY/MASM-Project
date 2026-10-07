@@ -1,15 +1,60 @@
 # MASM Maze
 
-`Code/MAZE.ASM` is a 16-bit DOS maze game with 3 levels on a 25x25 grid.
+`Code/MAZE.ASM` is a 16-bit DOS maze game with 3 randomly generated levels, for one player or two players (PvP).
 
-- `#` is a wall, `@` is the player, `E` is the exit.
-- Move with the arrow keys (or W A S D). Press ESC to quit.
-- Reach `E` to go to the next level.
+| Level | Grid | PvP time limit |
+|---|---|---|
+| 1 | 15 × 15 | 30 s |
+| 2 | 24 × 24 | 45 s |
+| 3 | 36 × 36 | 60 s |
+
+- Every run builds new mazes with a **randomised depth-first search (DFS)**.
+- Extra walls are then knocked out, so there is always **more than one path to the exit**.
+- Every square, wall or path, is one small square pixel.
+- **Blue** squares are walls and **magenta** is the exit.
+- The start menu offers **1** = one player, **2** = two players, and **ESC** = back to DOS.
+
+**One player**
+- You are green. Move with the arrow keys or W A S D.
+- **H** shows the shortest path from where you stand, in cyan. **ESC** returns to the menu.
+
+**Two players (PvP)**
+- Both players get **the same maze**, side by side.
+- **Player 1** (green) plays the left maze with **W A S D**. **Player 2** (cyan) plays the right maze with the **arrow keys**.
+- The first player to reach the exit wins the level.
+- If the time runs out, the player **closer to the exit** wins, counted in steps along the maze. Equal distance is a draw.
+- The level winner scores a point, and the final screen shows the match winner.
+
+**After every level**
+- **yellow** = the optimal (shortest) path
+- **red** = the path the player actually walked
+- **orange** = squares on both
+- In PvP, each maze shows its own player's path.
+- Press **ENTER** for the next level.
 
 ## Problem Statement
 Write a MASM program to draw a simple maze using the # character to represent walls and empty spaces for paths. Place a player character (e.g., @) at a defined starting point in the maze. Allow the user to navigate the maze using the arrow keys (Up, Down, Left, Right) by handling keyboard interrupts. Ensure the player cannot move through walls (#) and can only move along valid paths. Continuously update and store the player's current position, and refresh the maze view after each move.
 
 ## Build and run
+
+### DOSBox-RS (this repository)
+
+The `dosbox` folder contains an 8086 emulator with a built-in MASM and LINK. From the repository root:
+
+```
+cargo +stable-x86_64-pc-windows-gnu build --release --manifest-path dosbox/Cargo.toml
+dosbox/target/release/dosbox Code
+```
+
+Then, at the `C:\>` prompt:
+
+```
+masm MAZE.ASM;
+link MAZE.OBJ;
+MAZE
+```
+
+See [dosbox/README.md](dosbox/README.md) for details.
 
 ### MASM + LINK (in DOSBox)
 
@@ -38,459 +83,131 @@ Click inside the DOSBox window before pressing keys, so it receives them.
 
 ---
 
-# How the code works, line by line
+# How the code works
 
 A few terms come up often:
 
 - **Registers:** `AX`, `BX`, `CX` and `DX` are 16-bit. Each can be used as two 8-bit halves, such as `AH` (high byte) and `AL` (low byte).
-- **Interrupts:** `INT 10h` calls the BIOS video services, `INT 16h` the BIOS keyboard services and `INT 21h` the DOS services. The number put in `AH` before the call picks the service.
+- **Interrupts:** `INT 10h` calls the BIOS video services, `INT 16h` the BIOS keyboard, `INT 1Ah` the BIOS clock and `INT 21h` the DOS services. The number put in `AH` before the call picks the service.
+- **Square index:** the grid is one flat byte array, stored row after row. Square (row, col) is at index `row * side + col`. The four neighbours of index `i` are `i - side` (up), `i + side` (down), `i - 1` (left) and `i + 1` (right). These four steps are kept in the `deltas` table.
 
-Lines that repeat the same pattern are explained once.
+## 1. Data
 
-## 1. Header
-
-```asm
-.model small
-.stack 100h
-```
-
-| Line | Meaning |
+| Name | Meaning |
 |---|---|
-| `.model small` | The program uses one code segment and one data segment, each up to 64 KB. |
-| `.stack 100h` | Reserves 256 bytes of stack. `call`, `ret`, `push` and `pop` use it. |
+| `players` | 1 = one player, 2 = PvP |
+| `msize`, `cells` | Side of the current grid (15, 24 or 36) and `side * side` |
+| `grid` | 0 = wall, 1 = open, one byte per square. Both PvP players share it. |
+| `who` | The player being moved or drawn (0 or 1) |
+| `ppos`, `steps` | Square and move count of each player (2 words each) |
+| `orgx` | x position of each player's maze on the screen (2 and 42) |
+| `trail` | 1 = walked on during the level. It holds two blocks of 1296 bytes, one per player. |
+| `mark` | 1 = on the shortest path being shown (hint or result) |
+| `dstart`, `dexit` | BFS distance of every square from the start and from the exit (words, `FFFFh` = not reached) |
+| `queue`, `dstack` | Work lists for the BFS and the DFS |
+| `spos`, `epos` | Start and exit square indices |
+| `score`, `winner`, `reason` | PvP: levels won, the level winner (2 = draw), and how it was won (exit or time-out) |
+| `tstart`, `tlimit` | PvP: clock tick at the level start, and the ticks allowed (`limits` = 546, 819, 1092) |
 
-## 2. Data section
+All arrays are sized for the largest level (36 × 36 = 1296 squares). Smaller levels use only the first `side * side` entries.
 
-```asm
-.data
-level   db 0
-prow    db 1
-pcol    db 1
-```
+## 2. Screen: two square pixels per text cell
 
-| Line | Meaning |
-|---|---|
-| `.data` | Everything below is data, not instructions. |
-| `level db 0` | One byte for the current level: 0, 1 or 2. It shows on screen as 1, 2 or 3. |
-| `prow db 1` | The player's current **row**. It starts at 1. |
-| `pcol db 1` | The player's current **column**. It starts at 1. These two bytes are where the position is stored. |
+Text mode has only 25 rows, which is too few for a 36-row grid drawn one character per square. So every text cell shows the **upper half block** character (`DFh`, `▀`):
 
-```asm
-msglvl  db 'Level $'
-msgrow  db 'Row   $'
-msgcol  db 'Col   $'
-msgkey  db 'Arrows/WASD = Move$'
-msgend  db 'E = Exit$'
-msgesc  db 'ESC = Quit$'
-msgwin  db 'You finished all 3 levels!$'
-```
+- the top half is drawn in the cell's **foreground** colour
+- the bottom half is drawn in its **background** colour
 
-- Each line stores a text message.
-- Every message ends with `$`, because the DOS print service (`AH=09h`) prints characters until it reaches a `$`.
+That gives an 80 × 50 screen of square pixels. `setpix` writes one pixel straight into video memory at `B800h`: it changes the low nibble of the attribute byte for an even `y`, or the high nibble for an odd `y`.
 
-```asm
-mazes   db '#########################'
-        db '#       #             # #'
-        ...
-```
+Normally attribute bit 7 makes text blink. `INT 10h` with `AX=1003h, BL=0` turns blinking off, so all 16 colours can be used as backgrounds.
 
-- These are 75 lines of 25 characters each: three mazes of 25 rows.
-- In memory they form one long run of bytes, stored row after row and level after level.
-- One level is 25 × 25 = **625 bytes**.
-- So the character at (level, row, col) is at byte `level*625 + row*25 + col` of `mazes`. That formula is the heart of the program.
-- `#` is a wall, a space is a path and `E` is the exit. The `@` is never stored in the maze; it is drawn on top of it.
+`drawcell` paints one square as one pixel at `(orgx[who] + column, 2 + row)`.
 
-## 3. Program start
+- A 36 × 36 maze uses 36 columns and 18 text rows.
+- In PvP the two mazes sit at x = 2 and x = 42, side by side.
+- `drawmazes` draws the maze of every player.
 
-```asm
-.code
-main proc
-    mov ax,@data
-    mov ds,ax
-```
+## 3. Making the maze (`buildmaze`)
 
-| Line | Meaning |
-|---|---|
-| `.code` | Instructions start here. |
-| `main proc` | Starts the procedure `main`, where the program begins. |
-| `mov ax,@data` | Puts the address of the data segment into `AX`. |
-| `mov ds,ax` | Copies it into `DS` so the program can reach its variables. It goes through `AX` because a constant can't be moved into `DS` directly. |
+1. **`genmaze` – randomised DFS.** Everything starts as wall, and the start square (1,1) is carved and pushed on a stack. Then, repeatedly:
+   - look at the square on top of the stack;
+   - list the neighbours that may be carved (`carvable`);
+   - pick one at random (`random`), carve it and push it;
+   - if none can be carved, pop the stack (backtrack).
 
-```asm
-newlevel:
-    mov prow,1
-    mov pcol,1
-```
+   A neighbour may be carved only if all of these hold:
+   - it is inside the border and still a wall;
+   - it touches no open square except the one we come from;
+   - the two squares diagonally in front of it are walls.
 
-- `newlevel:` is a label that the code jumps to whenever a level starts.
-- The two `mov` lines put the player back at the start, (1,1).
+   This keeps corridors one square wide and gives a "perfect" maze, with exactly one route between any two squares.
+2. **`placeexit`** puts the exit on the open square with the largest `row + col`, which is nearest the bottom-right corner.
+3. **`bfs`** runs twice: from the start into `dstart`, and from the exit into `dexit`. A square lies on the route from start to exit exactly when `dstart + dexit` equals the route length (`onpath`).
+4. **A guaranteed second path.** `countwalls` with `strict = 1` counts the walls that meet all of these:
+   - open squares on two opposite sides and walls on the other two;
+   - both open squares lie on the route;
+   - those two squares are at least 4 steps apart.
 
-## 4. Main game loop: reading a key
+   Opening such a wall (`openrandom`) creates a shortcut, so the start and exit are now joined by two different routes. If the maze has no such wall, it is generated again.
+5. **Extra loops.** `side / 2` more random walls between two open squares are opened (`strict = 0`).
+6. A final `bfs` from the exit fills `dexit` for the finished maze. This table drives both the hint and the optimal path.
 
-```asm
-game:
-    call draw
-    mov ah,0
-    int 16h
-```
+`random` is a 16-bit linear congruential generator, `seed = seed * 25173 + 13849`. The seed comes from the BIOS tick count (`INT 1Ah`), so every run is different. `random` returns the high word of `seed * n`, which is a number from 0 to n−1.
 
-| Line | Meaning |
-|---|---|
-| `game:` | The top of the loop. The program returns here after every key press. |
-| `call draw` | Clears the screen and redraws the maze, the `@` and the text. This is the refresh after each move. |
-| `mov ah,0` | Selects keyboard service 0, "wait for a key". |
-| `int 16h` | Calls the BIOS keyboard interrupt and waits until a key is pressed. It returns the **scan code** (which physical key) in `AH` and the **ASCII code** (which character) in `AL`. Arrow keys have no character, so they are identified by `AH`. |
+## 4. Playing
 
-```asm
-    mov bl,prow
-    mov bh,pcol
-```
+**Reading keys.** Keys are read with `INT 16h`, which returns the scan code in `AH` and the character in `AL`. `keydir` turns a key into a direction (an offset into `deltas`) and an owner:
 
-- Copies the current position into `BL` (row) and `BH` (column).
-- The program changes this copy first and only saves it if the move turns out to be allowed.
-
-```asm
-    cmp al,27
-    je quit
-    cmp ah,01h
-    je quit
-```
-
-- `cmp` compares two values, and `je` ("jump if equal") jumps when they matched.
-- The first pair checks whether the key's character is ESC (ASCII 27).
-- The second pair checks whether the key's scan code is ESC (01h).
-- Checking both means ESC works whichever way the emulator reports it. Either way the program jumps to `quit`.
-
-```asm
-    or al,20h
-```
-
-- Sets bit 5 of `AL`, which turns an uppercase letter into lowercase (`'W'` becomes `'w'`).
-- This way `W` and `w` need only one comparison.
-- Arrow keys give `AL` = 0, so this does nothing harmful for them.
-
-## 5. Deciding the direction
-
-```asm
-    cmp ah,48h
-    je goup
-    cmp al,'w'
-    je goup
-```
-
-- If the key is the Up arrow (scan code 48h) **or** `w`, it jumps to `goup`.
-- The next three pairs work the same way:
-
-| Scan code | Letter | Direction |
+| Keys | `AL` | Owner (`DL`) |
 |---|---|---|
-| `50h` | `s` | Down → `godown` |
-| `4Bh` | `a` | Left → `goleft` |
-| `4Dh` | `d` | Right → `goright` |
+| W A S D | the letter | player 1 |
+| Arrows | 0 or `E0h` (scan code in `AH`) | player 2 |
 
-```asm
-    jmp game
-```
+**Moving.** `trymove` moves player `who`:
+- If the new square is a wall, the key is ignored.
+- Otherwise `ppos` and `steps` are updated, the square is set in that player's `trail`, and only the old and new squares are repainted.
 
-- If the key was none of these, the program ignores it and goes back to the top of the loop.
+**One player (`solo`).**
+- It waits for a key (`INT 16h AH=0`), and every movement key moves player 1.
+- **H** toggles the hint. `tracepath` follows `dexit` downhill from the player, always to a neighbour exactly one step closer to the exit, and sets `mark`. Those squares are shown in cyan.
 
-```asm
-goup:
-    dec bl
-    jmp move
-godown:
-    inc bl
-    jmp move
-goleft:
-    dec bh
-    jmp move
-goright:
-    inc bh
-```
+**Two players (`duel`).** It loops without blocking:
+1. `timeleft` reads the clock (`INT 1Ah`) and compares the ticks since `tstart` with `tlimit`. The clock ticks 18.2 times a second, so 30 s = 546 ticks. It returns the seconds left, which `showtime` displays (in red for the last 10 s).
+2. `INT 16h AH=01h` checks for a key without waiting. When there is none, `HLT` sleeps until the next interrupt (a key or a clock tick) instead of spinning the CPU.
+3. A key moves its owner's maze. The first player whose move lands on the exit wins (`reason = 0`).
+4. When the time runs out, the two players' `dexit` values are compared: the smaller one wins, and equal values are a draw (`reason = 1`). `dexit` counts real steps through the maze to the exit. The same numbers are shown live as `Dist` under each maze.
 
-- `dec` subtracts 1 and `inc` adds 1.
-- Up means row − 1, Down row + 1, Left column − 1 and Right column + 1.
-- Each case then jumps to `move`. `goright` needs no `jmp` because `move:` comes right after it, so it just continues into it.
+## 5. Level result
 
-## 6. Checking and making the move
+When a level ends, `showresult` runs:
 
-```asm
-move:
-    call getcell
-    cmp al,'#'
-    je game
-```
+1. `tracepath` is run from the **start**, so `mark` now holds one optimal path.
+2. `mode` becomes 1 and every maze is redrawn. `cellcolour` uses `mark` and the trail of the maze's own player:
 
-| Line | Meaning |
-|---|---|
-| `call getcell` | Looks up which character is at the new position (`BL`,`BH`) and returns it in `AL`. |
-| `cmp al,'#'` / `je game` | If that cell is a wall, the move is thrown away. `prow`/`pcol` stay the same, so the player **cannot pass through walls**. |
+| `mark` | `trail` | Colour |
+|---|---|---|
+| 1 | 0 | yellow (optimal only) |
+| 0 | 1 | red (walked only) |
+| 1 | 1 | orange (both) |
 
-```asm
-    mov prow,bl
-    mov pcol,bh
-```
+A player who stopped before the exit (time-out) is still drawn where they stood.
 
-- The cell is a path, so the new position is saved. This is where the stored position is updated.
+3. The text panel is filled in:
+   - **One player:** `result1` prints your move count next to the optimal one (`dexit[start]`), and says so when they are equal.
+   - **PvP:** `result2` adds a point to the level winner and prints the winner and the reason.
+4. **ENTER** continues and **ESC** returns to the menu. After level 3, `finalscreen` shows the match result.
 
-```asm
-    cmp al,'E'
-    jne game
-```
-
-- `jne` means "jump if not equal".
-- If the player is not on the exit, the program goes back to the loop.
-
-```asm
-    inc level
-    cmp level,3
-    jb newlevel
-```
-
-- The player reached `E`, so the program moves to the next level.
-- `jb` means "jump if below". If `level` is still under 3, it starts that level at `newlevel`.
-
-```asm
-    mov ax,0003h
-    int 10h
-    lea dx,msgwin
-    call print
-```
-
-- This runs only after all 3 levels are finished.
-- `AX=0003h` with `INT 10h` resets the 80×25 text screen, which also clears it.
-- `lea dx,msgwin` puts the address of the win message into `DX`, and `print` shows it.
-
-```asm
-quit:
-    mov ah,4Ch
-    int 21h
-main endp
-```
-
-- DOS service 4Ch ends the program and returns to DOS.
-- `main endp` closes the `main` procedure.
-
-## 7. `getcell`: read the maze cell at (BL, BH)
-
-```asm
-getcell proc
-    mov al,level
-    mov ah,0
-    mov cx,625
-    mul cx
-    mov si,ax
-```
-
-- Puts `level` into `AX`. `AH=0` makes sure the full 16-bit value is correct.
-- `mul cx` multiplies `AX` by 625, giving the byte where this level starts in `mazes`.
-- The result is kept in `SI`.
-
-```asm
-    mov al,bl
-    mov cl,25
-    mul cl
-    add si,ax
-```
-
-- `mul cl` is an 8-bit multiply: `AX = AL × CL`, so `AX = row × 25`.
-- Adding it to `SI` moves to the start of that row.
-
-```asm
-    mov al,bh
-    mov ah,0
-    add si,ax
-```
-
-- Adds the column, so `SI = level*625 + row*25 + col`.
-
-```asm
-    mov al,mazes[si]
-    ret
-getcell endp
-```
-
-- Reads that byte from the maze into `AL` and returns to the caller.
-
-## 8. `pnum`: print a number 0–99 as two digits
-
-```asm
-pnum proc
-    mov ah,0
-    aam
-```
-
-- `aam` divides `AL` by 10. The tens digit goes into `AH` and the units digit into `AL`.
-- Example: 23 becomes `AH=2`, `AL=3`.
-
-```asm
-    add ax,3030h
-```
-
-- Adds 30h to both bytes, which turns the digits into their characters (`'0'` is 30h).
-- So 2 and 3 become `'2'` and `'3'`.
-
-```asm
-    push ax
-    mov dl,ah
-    mov ah,2
-    int 21h
-```
-
-- `push ax` saves both digits on the stack, because the next line overwrites `AH`.
-- DOS service 2 prints the single character in `DL`, so this prints the tens digit.
-
-```asm
-    pop ax
-    mov dl,al
-    mov ah,2
-    int 21h
-    ret
-pnum endp
-```
-
-- `pop ax` restores the saved digits.
-- The rest prints the units digit and returns.
-
-## 9. `print` and `setcur`: small helpers
-
-```asm
-print proc
-    mov ah,9
-    int 21h
-    ret
-print endp
-```
-
-- Prints the `$`-terminated text whose address is in `DX`.
-
-```asm
-setcur proc
-    mov ah,2
-    mov bh,0
-    int 10h
-    ret
-setcur endp
-```
-
-- BIOS service 2 moves the cursor to row `DH`, column `DL`.
-- `BH=0` means screen page 0.
-
-## 10. `draw`: refresh the whole screen
-
-```asm
-draw proc
-    mov ax,0003h
-    int 10h
-```
-
-- Clears the screen by resetting 80×25 text mode.
-
-```asm
-    mov al,level
-    mov ah,0
-    mov cx,625
-    mul cx
-    mov si,ax
-```
-
-- Same calculation as in `getcell`: `SI` now points to the first character of the current level.
-
-```asm
-    mov dh,0
-nextrow:
-    mov dl,0
-    call setcur
-```
-
-- `DH` counts rows, starting at 0.
-- For each row, the cursor moves to (row, column 0).
-- Moving the cursor for each row, instead of printing a new-line, stops the screen from scrolling after the 25th row. The screen has exactly 25 rows.
-
-```asm
-    mov cx,25
-nextcol:
-    mov dl,mazes[si]
-    mov ah,2
-    int 21h
-    inc si
-    loop nextcol
-```
-
-- Prints 25 characters of this row, one at a time, moving `SI` to the next character each time.
-- `loop` subtracts 1 from `CX` and jumps back while `CX` is not 0.
-
-```asm
-    inc dh
-    cmp dh,25
-    jb nextrow
-```
-
-- Moves to the next row and repeats until all 25 rows are drawn.
-
-```asm
-    mov dh,2
-    mov dl,30
-    call setcur
-    lea dx,msglvl
-    call print
-    mov al,level
-    inc al
-    call pnum
-```
-
-- Moves the cursor to row 2, column 30, to the right of the maze, and prints `Level `.
-- Then it prints `level + 1`, so the screen shows 01–03 instead of 0–2.
-
-The next five blocks follow the same pattern: move the cursor, then print.
-
-| Screen row | Prints |
-|---|---|
-| 4 | `Row   ` + `prow` (the stored row) |
-| 5 | `Col   ` + `pcol` (the stored column) |
-| 8 | `Arrows/WASD = Move` |
-| 9 | `E = Exit` |
-| 10 | `ESC = Quit` |
-
-```asm
-    mov dh,prow
-    mov dl,pcol
-    call setcur
-    mov ah,2
-    mov dl,'@'
-    int 21h
-```
-
-- Moves the cursor to the player's stored position and prints `@` over the maze.
-- Maze row 0 is on screen row 0, so the position needs no adjustment.
-
-```asm
-    mov dh,12
-    mov dl,30
-    call setcur
-    ret
-draw endp
-```
-
-- Moves the blinking cursor to an empty spot so it doesn't sit on top of the `@`, then returns to the game loop.
-
-## 11. End of file
-
-```asm
-end main
-```
-
-- Marks the end of the source and tells the assembler the program starts at `main`.
-
----
-
-## Summary
+## 6. Summary
 
 ```
-start → reset position → ┌─ draw screen
-                         │  wait for key (INT 16h)
-                         │  ESC? → quit
-                         │  work out new row/col in BL/BH
-                         │  getcell: wall? → ignore move
-                         │  save new position in prow/pcol
-                         └─ on 'E'? → next level (or win after 3)
+menu (1 / 2 / ESC)
+  -> for each level (15, 24, 36):
+       buildmaze: DFS -> exit -> BFS x2 -> open a shortcut -> extra loops -> BFS
+       draw 1 maze + sidebar   |   2 identical mazes + bottom panel, start clock
+       solo:  wait key -> move / H hint / ESC                  until the exit
+       duel:  time left? -> key waiting? -> move P1 (WASD) or P2 (arrows), else HLT
+              first on the exit wins; at time-out the smaller dexit wins
+       result: yellow optimal / red walked / orange both, score, wait for ENTER
+  -> final screen (match winner in PvP) -> menu
 ```
