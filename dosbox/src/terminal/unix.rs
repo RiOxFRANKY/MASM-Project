@@ -42,7 +42,16 @@ impl UnixConsole {
         });
         print!("{ENTER_SCREEN}");
         let _ = std::io::stdout().flush();
-        Ok(UnixConsole { saved_mode, bytes, renderer: AnsiRenderer::new() })
+        let (row_offset, col_offset) = match stty(&["size"]) {
+            Ok(output) => {
+                let mut parts = output.split_whitespace();
+                let rows = parts.next().and_then(|s| s.parse::<usize>().ok()).unwrap_or(25);
+                let cols = parts.next().and_then(|s| s.parse::<usize>().ok()).unwrap_or(80);
+                (rows.saturating_sub(25) / 2, cols.saturating_sub(80) / 2)
+            }
+            Err(_) => (0, 0),
+        };
+        Ok(UnixConsole { saved_mode, bytes, renderer: AnsiRenderer::with_offset(row_offset, col_offset) })
     }
 
     fn read_escape(&mut self) -> Option<Input> {

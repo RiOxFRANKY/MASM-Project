@@ -1,0 +1,7 @@
+Need some addons on this projest
+1. Instead of the Hardcoded mazes we need to generate the mazes dynamically and for the 3 levels with increasing difficulty the block size is 10 X 10
+2. Inittial interface showing 1p or 2p, in 1p we can hoose the level, in 2p there is no feature to choose the level, turn based games starting from level 1 , the scores will be addded in each level the winner will get +20 score, 
+3. I ve got an interesting idea for the score calc, total score = total_blocks - (distinct blocks travelled - no of distinct blocks in shortest path)
+4. We already have a Hint feature add that, with every hint -20 score, but dont make the hint persistent , show it once ntil the player makes the move, when he makes the move the hint poath goes invisible and for again geting the hint -20 score again
+5. show both mazes for both users in 2p, and the system is turn based
+6. Add feature to take the names of the users in 2p only, with default p1 and p2, finally show a scoreboard kinda thing

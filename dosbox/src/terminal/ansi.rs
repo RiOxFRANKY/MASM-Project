@@ -3,17 +3,30 @@ use super::palette::escape_for;
 use super::Frame;
 use std::fmt::Write;
 
-pub const ENTER_SCREEN: &str = "\x1b[?1049h\x1b[?25l\x1b[2J";
+pub const ENTER_SCREEN: &str = "\x1b[?1049h\x1b[8;30;100t\x1b[?25l\x1b[2J";
 pub const LEAVE_SCREEN: &str = "\x1b[0m\x1b[?25h\x1b[?1049l";
 
 pub struct AnsiRenderer {
     previous: Vec<u8>,
     blink: bool,
+    pub row_offset: usize,
+    pub col_offset: usize,
+}
+
+impl Default for AnsiRenderer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AnsiRenderer {
+    #[allow(dead_code)]
     pub fn new() -> Self {
-        AnsiRenderer { previous: Vec::new(), blink: true }
+        AnsiRenderer { previous: Vec::new(), blink: true, row_offset: 0, col_offset: 0 }
+    }
+
+    pub fn with_offset(row_offset: usize, col_offset: usize) -> Self {
+        AnsiRenderer { previous: Vec::new(), blink: true, row_offset, col_offset }
     }
 
     pub fn render(&mut self, frame: &Frame) -> String {
@@ -32,7 +45,7 @@ impl AnsiRenderer {
                     continue;
                 }
                 if position != Some((row, column)) {
-                    let _ = write!(output, "\x1b[{};{}H", row + 1, column + 1);
+                    let _ = write!(output, "\x1b[{};{}H", row + 1 + self.row_offset, column + 1 + self.col_offset);
                 }
                 if current_attribute != Some(attribute) {
                     output.push_str(&escape_for(attribute, frame.blink));
@@ -43,7 +56,7 @@ impl AnsiRenderer {
             }
         }
         output.push_str("\x1b[0m");
-        let _ = write!(output, "\x1b[{};{}H", frame.cursor_row + 1, frame.cursor_column + 1);
+        let _ = write!(output, "\x1b[{};{}H", frame.cursor_row + 1 + self.row_offset, frame.cursor_column + 1 + self.col_offset);
         if frame.cursor_visible {
             output.push_str("\x1b[?25h");
         }

@@ -62,6 +62,13 @@ impl Shell {
     }
 
     pub fn run_startup(&mut self, commands: &[String]) -> Result<(), Quit> {
+        if commands.is_empty() {
+            if let Ok(autoexec) = self.machine.drive.resolve("AUTOEXEC.BAT") {
+                if autoexec.is_file() {
+                    return self.run_batch(&autoexec, "");
+                }
+            }
+        }
         for command in commands {
             self.prompt();
             self.println(command);
@@ -105,6 +112,8 @@ impl Shell {
         match name.as_str() {
             "MASM" | "ML" => self.masm(&arguments),
             "LINK" => self.link(&arguments),
+            "BUILD" => self.build_and_run(&arguments, false),
+            "RUN" => self.build_and_run(&arguments, true),
             _ => self.launch(&name, &arguments),
         }
     }

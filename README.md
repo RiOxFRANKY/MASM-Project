@@ -37,22 +37,33 @@ Write a MASM program to draw a simple maze using the # character to represent wa
 
 ## Build and run
 
-### DOSBox-RS (this repository)
+### DOSBox-RS (One-Step Build & Run)
 
-The `dosbox` folder contains an 8086 emulator with a built-in MASM and LINK. From the repository root:
+The repository includes a custom 8086 emulator with an embedded MASM assembler and LINK linker.
 
-```
-cargo +stable-x86_64-pc-windows-gnu build --release --manifest-path dosbox/Cargo.toml
-dosbox/target/release/dosbox Code
+From the repository root, you can compile and start the game in **a single command**:
+
+```bash
+./run.sh
+# or: cargo run --release --manifest-path dosbox/Cargo.toml
 ```
 
-Then, at the `C:\>` prompt:
+This will automatically:
+1. Build the emulator
+2. Mount the `Code/` directory as `C:`
+3. Automatically assemble `MAZE.ASM`, link `MAZE.OBJ`, and launch `MAZE`!
 
-```
-masm MAZE.ASM;
-link MAZE.OBJ;
-MAZE
-```
+Inside the emulator prompt, you can also use:
+- `RUN` (or `RUN MAZE`): Assembles, links, and runs in one single step.
+- `BUILD` (or `BUILD MAZE`): Assembles and links in one step.
+- `masm MAZE.ASM;` and `link MAZE.OBJ;` if you prefer manual steps.
+
+#### Adjusting Window Size
+- **Terminal mode (DOSBox-RS):** Press **`Cmd` + `+`** (or `Ctrl` + `+`) in your terminal to scale up the font size and enlarge the entire game window. Press **`Cmd` + `Ctrl` + `F`** to play in fullscreen. The emulator automatically centers the 80×25 display.
+- **Standalone DOSBox:** Launch with the included config for a crisp 1280×960 window:
+  ```bash
+  dosbox -conf dosbox.conf
+  ```
 
 See [dosbox/README.md](dosbox/README.md) for details.
 

@@ -57,5 +57,12 @@ pub fn parse(arguments: impl Iterator<Item = String>) -> Result<Parsed, String> 
             _ => return Err(format!("unexpected argument {argument}")),
         }
     }
+    if !directory_given {
+        if PathBuf::from("Code").is_dir() {
+            config.directory = PathBuf::from("Code");
+        } else if PathBuf::from("../Code").is_dir() {
+            config.directory = PathBuf::from("../Code");
+        }
+    }
     Ok(Parsed::Run(config))
 }

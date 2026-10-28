@@ -149,4 +149,30 @@ impl Shell {
         self.println(&format!("{output_name} created"));
         Ok(())
     }
+
+    pub(super) fn build_and_run(&mut self, arguments: &str, run: bool) -> Result<(), Quit> {
+        let trimmed = arguments.trim();
+        let target = if trimmed.is_empty() {
+            "MAZE"
+        } else {
+            trimmed.split_whitespace().next().unwrap_or("MAZE")
+        };
+        let target_base = base_name(target);
+        self.masm(&format!("{target_base}.ASM;"))?;
+        let obj_name = format!("{target_base}.OBJ");
+        if let Ok(obj_path) = self.machine.drive.resolve(&obj_name) {
+            if obj_path.is_file() {
+                self.link(&format!("{target_base}.OBJ;"))?;
+                if run {
+                    let exe_name = format!("{target_base}.EXE");
+                    if let Ok(exe_path) = self.machine.drive.resolve(&exe_name) {
+                        if exe_path.is_file() {
+                            self.launch(&target_base, "")?;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }

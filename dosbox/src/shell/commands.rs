@@ -11,6 +11,8 @@ Internal commands:
   MD dir / RD dir    make / remove dir     ECHO text      print text
   VER                show version          EXIT           quit the emulator
 Tools:
+  BUILD [name]                             assemble and link (default: MAZE)
+  RUN [name]                               assemble, link, and run (default: MAZE)
   MASM file[.ASM][,obj][;]                 assemble to an .OBJ file
   LINK file[.OBJ][,exe][,map][;] [/T] [/M] link to .EXE (/T makes a .COM)
 Programs:
