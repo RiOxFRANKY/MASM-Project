@@ -53,6 +53,11 @@ pub extern "system" fn Java_com_rioxfranky_dosbox_NativeBridge_sendBreak(_env: J
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_com_rioxfranky_dosbox_NativeBridge_setSpeed(_env: JniEnv, _class: JObject, speed: i32) {
+    dosbox::hardware::clock::set_speed(speed.max(1) as u32);
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_rioxfranky_dosbox_NativeBridge_readScreen(env: JniEnv, _class: JObject, output: JObject) -> i32 {
     let mut buffer = [0u8; SCREEN_BYTES];
     let version = snapshot(&mut buffer);

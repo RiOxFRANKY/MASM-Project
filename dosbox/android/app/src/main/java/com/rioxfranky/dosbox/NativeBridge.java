@@ -27,5 +27,7 @@ final class NativeBridge {
 
     static native void sendBreak();
 
+    static native void setSpeed(int speed);
+
     static native int readScreen(byte[] output);
 }

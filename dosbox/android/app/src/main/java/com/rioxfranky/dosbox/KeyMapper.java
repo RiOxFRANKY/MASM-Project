@@ -12,29 +12,7 @@ final class KeyMapper {
     static final int SCAN_LEFT = 0x4B;
     static final int SCAN_RIGHT = 0x4D;
 
-    interface CtrlListener {
-        void onCtrlChanged(boolean active);
-    }
-
-    private static boolean stickyCtrl;
-    private static CtrlListener ctrlListener;
-
     private KeyMapper() {
-    }
-
-    static void setCtrlListener(CtrlListener listener) {
-        ctrlListener = listener;
-    }
-
-    static boolean isStickyCtrl() {
-        return stickyCtrl;
-    }
-
-    static void setStickyCtrl(boolean active) {
-        stickyCtrl = active;
-        if (ctrlListener != null) {
-            ctrlListener.onCtrlChanged(active);
-        }
     }
 
     static void sendSpecial(int scan, int ascii) {
@@ -43,6 +21,10 @@ final class KeyMapper {
 
     static void sendEnter() {
         sendSpecial(SCAN_ENTER, 13);
+    }
+
+    static void sendEscape() {
+        sendSpecial(SCAN_ESC, 27);
     }
 
     static void sendBackspace() {
@@ -55,20 +37,16 @@ final class KeyMapper {
         }
     }
 
-    static void sendCharacter(int character, boolean physicalCtrl) {
+    static void sendCharacter(int character, boolean ctrl) {
         if (character == '\n' || character == '\r') {
             sendEnter();
             return;
         }
-        if ((physicalCtrl || stickyCtrl) && Character.isLetter(character) && character < 0x80) {
+        if (ctrl && Character.isLetter(character) && character < 0x80) {
             NativeBridge.sendCtrl(character);
-            setStickyCtrl(false);
             return;
         }
         NativeBridge.sendChar(character);
-        if (stickyCtrl) {
-            setStickyCtrl(false);
-        }
     }
 
     static boolean handle(KeyEvent event) {

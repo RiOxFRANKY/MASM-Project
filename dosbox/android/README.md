@@ -14,16 +14,26 @@ An Android app that runs the DOSBox-RS 8086 emulator on the phone itself.
 
 ## Using it
 
-| Part of the screen | What it does |
-|---|---|
-| DOS screen | 80 × 25 text screen. Tap it to open the phone keyboard. |
-| Extra-keys bar | `ESC`, `TAB`, `CTRL` (sticky: tap it, then a letter), the arrows, `↵` (Enter), `⌨` (keyboard on/off) and `🎮` (gamepad on/off) |
-| Gamepad | Two D-pads for two players on one phone: P1 = W A S D (left), P2 = arrow keys (right). The middle buttons are ESC, ENTER, H, 1 and 2. |
-| Menu (⋮) | Keyboard, Gamepad, **Import files**, **Export a file**, Restart DOS |
+The app is laid out like a handheld game emulator, in portrait. The 80 × 25 DOS screen is on top and a controller is below it:
 
-- **CTRL + C** stops the running DOS program.
+| Control | What it sends / does |
+|---|---|
+| D-pad | Arrow keys (hold to repeat) |
+| **LEFT** | `1` |
+| **RIGHT** | `2` |
+| **►►** | Fast forward: 1× → 2× → 4× → 1×. It speeds up the emulated BIOS clock, so game timers and the computer player speed up together. |
+| **SELECT** | Opens or closes the phone keyboard, for typing DOS commands |
+| **START** | `3` (the cognitive study in the maze menu) |
+| **B** | ESC (back / exit) |
+| **A** | ENTER: confirms in menus, and shows the hint during a race |
+| **⋮** (top right) | **Import files**, **Export a file**, Restart DOS |
+
+- **Zooming the DOS screen:** the screen uses all the space above the controller.
+  - **Double-tap** zooms in at that spot (2.2×), and double-tap again goes back.
+  - **Pinch** zooms up to 4×, and **drag** moves around while zoomed.
+  - The screen is drawn as a sharp 1280 × 800 picture, at 16 × 32 pixels per character, and scaled smoothly to fit.
 - Typing `EXIT` restarts DOS.
-- A Bluetooth or USB keyboard also works, including the arrow keys, F1–F12 and Ctrl.
+- A Bluetooth or USB keyboard also works, including the arrow keys, F1–F12 and Ctrl (Ctrl+C stops a program).
 
 ### Running your own programs
 
@@ -33,12 +43,12 @@ An Android app that runs the DOSBox-RS 8086 emulator on the phone itself.
 
 ### The maze game
 
-On the first start the app copies `MAZE.ASM` to `C:\` and assembles it for you (`masm MAZE.ASM;` then `link MAZE.OBJ;`). Then type `MAZE`:
+The app starts `MAZE` by itself. On the first start it copies `MAZE.ASM` to `C:\` and assembles it first (`masm MAZE.ASM;` then `link MAZE.OBJ;`).
 
-- **1 player vs the computer:** use the arrows on the extra-keys bar. The A\* bot races you in the right-hand maze. You see its whole maze, but it only knows the squares it has seen near itself.
-- **2 players:** open the gamepad with `🎮`. One player uses the left pad and the other the right pad.
-
-Landscape gives the biggest screen.
+- **Menu:** LEFT (`1`) starts you vs the computer, and START (`3`) the cognitive study. Two-player mode is switched off for now.
+- **In the race:** steer with the D-pad. **A** shows your shortest path to the exit until your next move. The A\* bot races you in the right-hand maze; you see its whole maze, but it only knows the squares it has seen near itself.
+- **Speed:** ►► speeds everything up; **B** goes back.
+- **Leaving:** B from the game's menu leaves the game. Type `MAZE` to start it again.
 
 ### Where drive C: lives
 
@@ -83,10 +93,12 @@ The build compiles the Rust core (`native/`) for each CPU type with the NDK link
 | `native/src/terminal.rs` | `AndroidTerminal`: the emulator's screen and keyboard, backed by the bridge |
 | `native/src/session.rs` | Runs the DOS shell on its own thread; first-run `masm`/`link` of the maze |
 | `app/.../NativeBridge.java` | Java side of the JNI functions |
-| `app/.../ScreenView.java` | Draws the 80 × 25 screen (CP437 glyphs, 16 colours, half-block pixels) and handles keyboard input |
+| `app/.../ScreenView.java` | Draws the 80 × 25 screen into an off-screen picture (CP437 glyphs, 16 colours, half-block pixels; only changed cells are redrawn), scales it to the view with zoom and pan, and handles keyboard input |
 | `app/.../DosInputConnection.java` | Turns soft-keyboard text into DOS key presses |
-| `app/.../KeyMapper.java` | Android key codes → DOS scan codes, plus sticky CTRL |
-| `app/.../ExtraKeysBar.java`, `GamepadView.java`, `KeyButton.java` | On-screen keys with auto-repeat while held |
+| `app/.../KeyMapper.java` | Android key codes → DOS scan codes |
+| `app/.../ControllerView.java` | Lays out the controller: each button placed by its position on the handheld-style layout, scaled to the phone |
+| `app/.../DpadView.java` | The round D-pad (slide between directions, repeat while held) |
+| `app/.../KeyButton.java` | Pill and round buttons |
 | `app/.../DriveFiles.java` | Drive C: folder, starter files, import and export |
 | `app/.../MainActivity.java` | Layout, menu and session restart |
 

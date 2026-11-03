@@ -11,7 +11,7 @@ const BANNER: [&str; 5] = [
     "DOSBox-RS for Android - 8086 emulator with built-in MASM and LINK",
     "Drive C: is this app's storage. Use the menu to import .EXE/.COM/.ASM files.",
     "Run a program by typing its name, e.g.  MAZE   (HELP lists all commands)",
-    "Keys: extra-keys bar for ESC/CTRL/arrows, gamepad for 2 players. CTRL+C stops.",
+    "SELECT=keyboard A=ENTER B=ESC LEFT=1 RIGHT=2 START=3. Double-tap/pinch = zoom",
     "",
 ];
 
@@ -42,13 +42,17 @@ pub fn stop() {
     bridge.key_ready.notify_all();
 }
 
-fn first_run_commands(root: &Path) -> Vec<String> {
+fn startup_commands(root: &Path) -> Vec<String> {
     let exists = |name: &str| root.join(name).is_file();
+    let mut commands = Vec::new();
     if exists("MAZE.ASM") && !exists("MAZE.EXE") {
-        vec!["masm MAZE.ASM;".to_string(), "link MAZE.OBJ;".to_string()]
-    } else {
-        Vec::new()
+        commands.push("masm MAZE.ASM;".to_string());
+        commands.push("link MAZE.OBJ;".to_string());
     }
+    if exists("MAZE.ASM") || exists("MAZE.EXE") {
+        commands.push("MAZE".to_string());
+    }
+    commands
 }
 
 fn run(root: &Path) {
@@ -58,7 +62,7 @@ fn run(root: &Path) {
     let Ok(drive) = Drive::mount(root) else {
         return;
     };
-    let commands = first_run_commands(root);
+    let commands = startup_commands(root);
     let mut shell = Shell::new(Machine::new(Box::new(AndroidTerminal), drive));
     for line in BANNER {
         shell.println(line);

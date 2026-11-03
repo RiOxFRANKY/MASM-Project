@@ -13,7 +13,7 @@
 - Every square, wall or path, is one small square pixel.
 - **Blue** squares are walls and **magenta** is the exit.
 - Both sides get **the same maze**, side by side, and race to the exit.
-- The start menu offers **1** = you vs the computer, **2** = two players, **3** = cognitive study, and **ESC** = back to DOS.
+- The start menu offers **1** = you vs the computer, **3** = cognitive study, and **ESC** = back to DOS. **2** (two players) is switched off for now and is shown greyed out.
 
 **Rules (both modes)**
 - Every round starts with a **3, 2, 1, START!** countdown. The clock and the computer start only at START!, and keys pressed during the countdown are ignored.
@@ -24,6 +24,7 @@
 
 **One player vs the computer**
 - You are green, on the left. Move with the arrow keys or W A S D.
+- **H** or **ENTER** shows a hint: your shortest path to the exit, in cyan, until your next move. On the Android app this is the **A** button.
 - The computer (cyan, on the right) is an **A\* search bot with limited visibility**, so it plays fair. Unlike you, it cannot see the whole maze:
   - At the start it knows only the outer border and where the exit is, which you can see too.
   - On every step it uncovers the squares within 2, 3 or 4 rows/columns of itself (levels 1, 2, 3). Only those go into its own map. **You** still see its whole maze on screen, so you can watch where it goes.
@@ -44,8 +45,9 @@
 - The bot moves at full speed. **SPACE** switches its run to a slow, 18 steps/s view and back. **ESC** returns to the menu.
 - **It always finishes.** If a try finds no new wall, the bot walked its first plan. That plan is a shortest path on a map where unseen squares count as open, so it can't be longer than the real shortest path. Every other try uncovers at least one new wall, and a maze has only so many walls.
 
-**Two players (PvP)**
+**Two players (PvP)**, switched off for now
 - **Player 1** (green) plays the left maze with **W A S D**. **Player 2** (cyan) plays the right maze with the **arrow keys**.
+- The code is still in place; only the menu entry is disabled.
 
 **After every level**
 - **yellow** = the optimal (shortest) path
@@ -80,7 +82,9 @@ See [dosbox/README.md](dosbox/README.md) for details.
 
 ### On an Android phone
 
-[dosbox/android](dosbox/android/README.md) builds the same emulator as an Android app (`.apk`). On the first start, the app assembles and links `MAZE.ASM` itself, so you just type `MAZE`. The gamepad button shows two D-pads, so two players can play PvP on one phone. Other `.EXE` files can be added with **Import files**.
+[dosbox/android](dosbox/android/README.md) builds the same emulator as an Android app (`.apk`). It is laid out like a handheld game emulator: D-pad = arrows, LEFT = `1`, RIGHT = `2`, START = `3`, A = ENTER (and hint), B = ESC, SELECT = keyboard, ►► = speed. Double-tap or pinch the screen to zoom.
+
+The app assembles and links `MAZE.ASM` the first time, then starts `MAZE` by itself. Other `.EXE` files can be added with **Import files**.
 
 ### MASM + LINK (in DOSBox)
 

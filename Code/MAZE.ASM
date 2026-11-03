@@ -41,6 +41,7 @@ RIGHTX  equ 42                  ; x of the right maze (player 2 / computer)
 ; pixel colours (0-15; 16 background colours because blinking is turned off)
 C_FLOOR equ 0                   ; black
 C_WALL  equ 1                   ; blue
+C_HINT  equ 3                   ; cyan          = hint path
 C_BOTH  equ 6                   ; orange/brown = optimal AND walked
 C_OLD   equ 8                   ; dark grey     = walked in an earlier try
 C_PLAY  equ 10                  ; bright green  = player 1
@@ -81,6 +82,7 @@ pathlen dw 0                    ; start -> exit distance before braiding
 best    dw 0                    ; scratch: best row+column while placing exit
 extra   dw 0                    ; number of extra loops to add
 mode    db 0                    ; 0 = playing, 1 = showing the level result
+hinton  db 0                    ; 1 = your hint path is on screen
 strict  db 0                    ; 1 = checkwall only accepts shortcuts
 tries   db 0                    ; maze generation attempts
 seed    dw 0                    ; random number generator state
@@ -142,7 +144,7 @@ msgm1   db '1   One player vs the computer$'
 msgm1a  db 'Race an A* bot through the same maze. You: arrows or W A S D.$'
 msgm1b  db 'The bot only sees 2 / 3 / 4 squares around it (by level) and$'
 msgm1c  db 'replans every time it finds a wall. You see its whole maze.$'
-msgm2   db '2   Two players (PvP)$'
+msgm2   db '2   Two players (PvP) - not available right now$'
 msgm2a  db 'Both players get the same maze, side by side.$'
 msgm2b  db 'Player 1: W A S D (left)   Player 2: arrow keys (right)$'
 msgm2c  db 'Mazes: 15x15, 24x24, 36x36. Time limit 30 / 45 / 60 seconds.$'
@@ -152,7 +154,7 @@ msgm5a  db 'The bot runs one maze again and again, keeping what it has$'
 msgm5b  db 'seen, until it walks the optimal path. Then you do the same$'
 msgm5c  db 'on that maze and both learning curves are compared. 3 stages.$'
 msgm3   db 'ESC Exit to DOS$'
-msgm4   db 'Press 1, 2 or 3$'
+msgm4   db 'Press 1 or 3$'
 msgstud db ' COGNITIVE STUDY - THE BOT LEARNS ONE MAZE $'
 msgstg  db 'Stage $'
 msgsopt db 'Optimal path  $'
@@ -231,7 +233,7 @@ msgscr3 db '  P2$'
 msgscy  db 'Score   YOU  $'
 msgscc  db '  CPU$'
 msghelp db 'First to the exit wins. At time-out the closer player wins.  ESC = menu$'
-msghlpc db 'Race the bot to the exit. It sees only nearby squares.  ESC = menu$'
+msghlpc db 'Race the bot to the exit.  H or ENTER = hint   ESC = menu$'
 msgw1   db ' PLAYER 1 WINS THE LEVEL $'
 msgw2   db ' PLAYER 2 WINS THE LEVEL $'
 msgwy   db ' YOU WIN THE LEVEL $'
@@ -263,6 +265,7 @@ dstack  dw MAXC dup(0)          ; DFS stack of square indices
 known   db MAXC dup(0)          ; bot map: 0 = unseen, 1 = open, 2 = wall
 parent  dw MAXC dup(0)          ; A*: square we came from
 bpath   dw MAXC dup(0)          ; A*: planned path, exit first
+hintmap db MAXC dup(0)          ; 1 = on the hint path shown to you
 
 ; the A* search runs during play, when these build-time arrays are free
 gcost   equ dstart              ; A*: steps from the bot (FFFFh = not reached)
@@ -300,18 +303,13 @@ mn_key:
     je exit_dos
     cmp al,'1'
     je mn_one
-    cmp al,'2'
-    je mn_two
-    cmp al,'3'
+    cmp al,'3'                  ; '2' (PvP) is switched off for now
     jne mn_key
     mov players,3
     call study                  ; mode 3 runs its own three stages
     jmp menu
 mn_one:
     mov players,1
-    jmp mn_play
-mn_two:
-    mov players,2
 mn_play:
     mov level,0
     mov score[0],0
@@ -382,7 +380,7 @@ drawmenu proc
     mov dh,8
     mov dl,12
     mov si,offset msgm2
-    mov ah,A_P2
+    mov ah,A_DIM                ; PvP is switched off for now
     call vtext
     mov ah,A_DIM
     mov si,offset msgm2a
@@ -465,6 +463,7 @@ initlevel proc
     mov steps[0],0
     mov steps[2],0
     mov mode,0
+    mov hinton,0
     mov who,0
     mov di,offset trail
     mov cx,2 * MAXC
@@ -604,6 +603,18 @@ du_key:
     int 16h
     cmp al,27
     je du_esc
+    cmp players,1
+    jne du_dir
+    cmp al,13                   ; against the bot: ENTER or H = hint
+    je du_hint
+    mov dl,al
+    or dl,20h
+    cmp dl,'h'
+    jne du_dir
+du_hint:
+    call showhint
+    jmp du_loop
+du_dir:
     call keydir                 ; DL = player who owns the key
     jnc du_loop
     cmp players,1
@@ -738,6 +749,13 @@ applymove proc
     call drawcell               ; repaint the old square
     mov ax,si
     call drawcell               ; draw the player on the new one
+    cmp who,0
+    jne am_stats
+    cmp hinton,0
+    je am_stats
+    mov hinton,0                ; your move ends the hint
+    call drawall
+am_stats:
     call updstats
     cmp si,epos
     je am_exit
@@ -752,6 +770,39 @@ am_out:
     pop bx
     ret
 applymove endp
+
+; ===========================================================================
+; showhint - show your shortest path to the exit in cyan until your next
+;            move (against the computer only)
+; ===========================================================================
+showhint proc
+    push ax
+    push cx
+    push si
+    push di
+    mov ax,ppos[0]
+    call tracepath              ; mark[] = shortest path from you
+    push es
+    push ds
+    pop es
+    mov si,offset mark
+    mov di,offset hintmap
+    mov cx,cells
+    rep movsb                   ; keep it: the bot reuses mark[] for A*
+    pop es
+    mov hinton,1
+    mov al,who
+    push ax
+    mov who,0
+    call drawall
+    pop ax
+    mov who,al
+    pop di
+    pop si
+    pop cx
+    pop ax
+    ret
+showhint endp
 
 ; ===========================================================================
 ; the computer player
@@ -1792,6 +1843,15 @@ cc_race:
     je cc_player
     cmp si,epos
     je cc_exit
+    cmp hinton,0
+    je cc_plain
+    cmp who,0
+    jne cc_plain
+    cmp hintmap[si],0
+    je cc_plain
+    mov bl,C_HINT               ; your hint path
+    jmp cc_out
+cc_plain:
     cmp grid[si],0
     je cc_wall
     jmp cc_floor

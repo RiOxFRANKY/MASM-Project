@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">DOSBox-RS</string>
-    <string name="menu_keyboard">Keyboard</string>
-    <string name="menu_gamepad">Gamepad</string>
     <string name="menu_import">Import files</string>
     <string name="menu_export">Export a file</string>
     <string name="menu_restart">Restart DOS</string>

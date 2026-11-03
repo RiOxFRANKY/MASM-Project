@@ -6,23 +6,28 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.widget.TextView;
 
 final class KeyButton extends TextView {
+    enum Shape { PILL, CIRCLE }
+
+    static final int FILL = 0xFF2C2C2C;
+    static final int PRESSED = 0xFF5A5A5A;
+    static final int STROKE = 0xFF9A9A9A;
+    static final int TEXT = 0xFFD2D2D2;
+
     private static final long FIRST_REPEAT_MS = 320;
-    private static final long REPEAT_MS = 85;
-    private static final int IDLE_COLOR = 0xFF2A2A3A;
-    private static final int PRESSED_COLOR = 0xFF5555FF;
-    private static final int ACTIVE_COLOR = 0xFF00AA00;
+    private static final long REPEAT_MS = 90;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final GradientDrawable shape = new GradientDrawable();
+    private final GradientDrawable background = new GradientDrawable();
+    private final Shape shape;
     private final Runnable action;
     private final boolean repeats;
-    private boolean active;
     private final Runnable repeater = new Runnable() {
         @Override
         public void run() {
@@ -32,24 +37,27 @@ final class KeyButton extends TextView {
     };
 
     @SuppressLint("ClickableViewAccessibility")
-    KeyButton(Context context, String label, boolean repeats, Runnable action) {
+    KeyButton(Context context, String label, Shape shape, boolean repeats, Runnable action) {
         super(context);
+        this.shape = shape;
         this.action = action;
         this.repeats = repeats;
         setText(label);
-        setTextColor(0xFFFFFFFF);
-        setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        setTextColor(TEXT);
+        setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
         setGravity(Gravity.CENTER);
-        setTextSize(14);
-        shape.setCornerRadius(context.getResources().getDisplayMetrics().density * 6);
-        shape.setColor(IDLE_COLOR);
-        setBackground(shape);
+        setIncludeFontPadding(false);
+        setSingleLine(true);
+        background.setShape(shape == Shape.CIRCLE ? GradientDrawable.OVAL : GradientDrawable.RECTANGLE);
+        background.setColor(FILL);
+        background.setStroke(Math.round(context.getResources().getDisplayMetrics().density * 2), STROKE);
+        setBackground(background);
         setOnTouchListener((view, event) -> {
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
-                    shape.setColor(PRESSED_COLOR);
-                    performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
-                    action.run();
+                    background.setColor(PRESSED);
+                    performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+                    this.action.run();
                     if (this.repeats) {
                         handler.postDelayed(repeater, FIRST_REPEAT_MS);
                     }
@@ -57,7 +65,7 @@ final class KeyButton extends TextView {
                 case MotionEvent.ACTION_UP:
                 case MotionEvent.ACTION_CANCEL:
                     handler.removeCallbacks(repeater);
-                    shape.setColor(active ? ACTIVE_COLOR : IDLE_COLOR);
+                    background.setColor(FILL);
                     if (event.getActionMasked() == MotionEvent.ACTION_UP) {
                         performClick();
                     }
@@ -73,8 +81,14 @@ final class KeyButton extends TextView {
         return super.performClick();
     }
 
-    void setActive(boolean active) {
-        this.active = active;
-        shape.setColor(active ? ACTIVE_COLOR : IDLE_COLOR);
+    @Override
+    protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
+        super.onSizeChanged(width, height, oldWidth, oldHeight);
+        if (shape == Shape.PILL) {
+            background.setCornerRadius(height / 2f);
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, height * 0.42f);
+        } else {
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, height * 0.36f);
+        }
     }
 }

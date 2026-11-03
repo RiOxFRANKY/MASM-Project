@@ -4,36 +4,32 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Menu;
-import android.view.MenuItem;
-import android.view.View;
 import android.widget.LinearLayout;
+import android.widget.PopupMenu;
 import android.widget.Toast;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-public final class MainActivity extends Activity implements ExtraKeysBar.Actions, ScreenView.SessionListener {
+public final class MainActivity extends Activity implements ScreenView.SessionListener {
     private static final int REQUEST_IMPORT = 1;
     private static final int REQUEST_EXPORT = 2;
-    private static final int MENU_KEYBOARD = 1;
-    private static final int MENU_GAMEPAD = 2;
-    private static final int MENU_IMPORT = 3;
-    private static final int MENU_EXPORT = 4;
-    private static final int MENU_RESTART = 5;
-    private static final String PREFERENCES = "dosbox";
-    private static final String KEY_GAMEPAD = "gamepad";
+    private static final int MENU_IMPORT = 1;
+    private static final int MENU_EXPORT = 2;
+    private static final int MENU_RESTART = 3;
+    private static final int[] SPEEDS = {1, 2, 4};
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private DriveFiles drive;
     private ScreenView screen;
-    private GamepadView gamepad;
+    private KeyButton fastForward;
+    private int speedIndex;
     private String pendingExport;
     private boolean restarting;
 
@@ -42,25 +38,77 @@ public final class MainActivity extends Activity implements ExtraKeysBar.Actions
         super.onCreate(savedInstanceState);
         drive = new DriveFiles(this);
         drive.installStarterFiles();
+        float density = getResources().getDisplayMetrics().density;
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(0xFF000000);
+
         screen = new ScreenView(this);
         screen.setSessionListener(this);
-        gamepad = new GamepadView(this);
         root.addView(screen, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
-        root.addView(gamepad, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-        root.addView(new ExtraKeysBar(this, this), new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        ControllerView controller = buildController();
+        int gap = Math.round(8 * density);
+        controller.setPadding(0, gap, 0, gap);
+        root.addView(controller, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         setContentView(root);
 
-        gamepad.setVisibility(preferences().getBoolean(KEY_GAMEPAD, false) ? View.VISIBLE : View.GONE);
+        NativeBridge.setSpeed(SPEEDS[speedIndex]);
         NativeBridge.start(drive.rootPathBytes());
         screen.requestFocus();
     }
 
-    private SharedPreferences preferences() {
-        return getSharedPreferences(PREFERENCES, MODE_PRIVATE);
+    private ControllerView buildController() {
+        ControllerView controller = new ControllerView(this);
+        KeyButton menu = new KeyButton(this, "⋮", KeyButton.Shape.PILL, false, () -> { });
+        menu.setOnClickListener(view -> showMenu(menu));
+        fastForward = new KeyButton(this, "►►", KeyButton.Shape.PILL, false, this::cycleSpeed);
+        controller.addRect(menu, 0.86f, 0.05f, 0.986f, 0.145f);
+        controller.addRect(new KeyButton(this, "LEFT", KeyButton.Shape.PILL, false,
+                () -> NativeBridge.sendKey(0x02, '1')), 0.012f, 0.323f, 0.213f, 0.418f);
+        controller.addRect(fastForward, 0.232f, 0.323f, 0.436f, 0.418f);
+        controller.addCircle(new DpadView(this), 0.278f, 0.718f, 0.267f);
+        controller.addRect(new KeyButton(this, "SELECT", KeyButton.Shape.PILL, false,
+                screen::toggleKeyboard), 0.564f, 0.55f, 0.766f, 0.646f);
+        controller.addRect(new KeyButton(this, "START", KeyButton.Shape.PILL, false,
+                () -> NativeBridge.sendKey(0x04, '3')), 0.784f, 0.55f, 0.986f, 0.646f);
+        controller.addRect(new KeyButton(this, "RIGHT", KeyButton.Shape.PILL, false,
+                () -> NativeBridge.sendKey(0x03, '2')), 0.784f, 0.665f, 0.986f, 0.761f);
+        controller.addCircle(new KeyButton(this, "B", KeyButton.Shape.CIRCLE, false,
+                KeyMapper::sendEscape), 0.666f, 0.885f, 0.093f);
+        controller.addCircle(new KeyButton(this, "A", KeyButton.Shape.CIRCLE, false,
+                KeyMapper::sendEnter), 0.889f, 0.885f, 0.093f);
+        return controller;
+    }
+
+    private void cycleSpeed() {
+        speedIndex = (speedIndex + 1) % SPEEDS.length;
+        int speed = SPEEDS[speedIndex];
+        NativeBridge.setSpeed(speed);
+        fastForward.setText(speed == 1 ? "►►" : "►► " + speed + "x");
+    }
+
+    private void showMenu(KeyButton anchor) {
+        PopupMenu popup = new PopupMenu(this, anchor);
+        popup.getMenu().add(Menu.NONE, MENU_IMPORT, 1, R.string.menu_import);
+        popup.getMenu().add(Menu.NONE, MENU_EXPORT, 2, R.string.menu_export);
+        popup.getMenu().add(Menu.NONE, MENU_RESTART, 3, R.string.menu_restart);
+        popup.setOnMenuItemClickListener(item -> {
+            switch (item.getItemId()) {
+                case MENU_IMPORT:
+                    startImport();
+                    return true;
+                case MENU_EXPORT:
+                    startExport();
+                    return true;
+                case MENU_RESTART:
+                    restartSession();
+                    return true;
+                default:
+                    return false;
+            }
+        });
+        popup.show();
     }
 
     @Override
@@ -69,52 +117,6 @@ public final class MainActivity extends Activity implements ExtraKeysBar.Actions
             NativeBridge.stop();
         }
         super.onDestroy();
-    }
-
-    @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        menu.add(Menu.NONE, MENU_KEYBOARD, 1, R.string.menu_keyboard).setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM);
-        menu.add(Menu.NONE, MENU_GAMEPAD, 2, R.string.menu_gamepad).setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM);
-        menu.add(Menu.NONE, MENU_IMPORT, 3, R.string.menu_import);
-        menu.add(Menu.NONE, MENU_EXPORT, 4, R.string.menu_export);
-        menu.add(Menu.NONE, MENU_RESTART, 5, R.string.menu_restart);
-        return true;
-    }
-
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        switch (item.getItemId()) {
-            case MENU_KEYBOARD:
-                toggleKeyboard();
-                return true;
-            case MENU_GAMEPAD:
-                toggleGamepad();
-                return true;
-            case MENU_IMPORT:
-                startImport();
-                return true;
-            case MENU_EXPORT:
-                startExport();
-                return true;
-            case MENU_RESTART:
-                restartSession();
-                return true;
-            default:
-                return super.onOptionsItemSelected(item);
-        }
-    }
-
-    @Override
-    public void toggleKeyboard() {
-        screen.toggleKeyboard();
-    }
-
-    @Override
-    public void toggleGamepad() {
-        boolean show = gamepad.getVisibility() != View.VISIBLE;
-        gamepad.setVisibility(show ? View.VISIBLE : View.GONE);
-        preferences().edit().putBoolean(KEY_GAMEPAD, show).apply();
-        screen.requestFocus();
     }
 
     private void startImport() {

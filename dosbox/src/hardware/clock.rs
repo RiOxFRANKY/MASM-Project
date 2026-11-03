@@ -1,5 +1,6 @@
 use super::memory::Memory;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 const BDA_TICKS: u32 = 0x46C;
 
@@ -63,9 +64,43 @@ fn breakdown(seconds: u64, millis: u32) -> DateTime {
     }
 }
 
-pub fn ticks_since_midnight() -> u32 {
+struct TimeScale {
+    speed: u32,
+    real_anchor: Instant,
+    virtual_anchor_ms: u64,
+}
+
+fn real_millis_of_day() -> u64 {
     let (seconds, millis) = since_epoch();
-    let millis_of_day = (seconds % 86_400) * 1_000 + millis as u64;
+    (seconds % 86_400) * 1_000 + millis as u64
+}
+
+fn scale() -> &'static Mutex<TimeScale> {
+    static SCALE: OnceLock<Mutex<TimeScale>> = OnceLock::new();
+    SCALE.get_or_init(|| {
+        Mutex::new(TimeScale { speed: 1, real_anchor: Instant::now(), virtual_anchor_ms: real_millis_of_day() })
+    })
+}
+
+fn virtual_millis_of_day(state: &TimeScale) -> u64 {
+    let elapsed = state.real_anchor.elapsed().as_millis() as u64;
+    (state.virtual_anchor_ms + elapsed * state.speed as u64) % (86_400 * 1_000)
+}
+
+pub fn set_speed(speed: u32) {
+    let Ok(mut state) = scale().lock() else {
+        return;
+    };
+    state.virtual_anchor_ms = virtual_millis_of_day(&state);
+    state.real_anchor = Instant::now();
+    state.speed = speed.clamp(1, 16);
+}
+
+pub fn ticks_since_midnight() -> u32 {
+    let millis_of_day = match scale().lock() {
+        Ok(state) => virtual_millis_of_day(&state),
+        Err(_) => real_millis_of_day(),
+    };
     (millis_of_day * 1_193_182 / 65_536 / 1_000) as u32
 }
 

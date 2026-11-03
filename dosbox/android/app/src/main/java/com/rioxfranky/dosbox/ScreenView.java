@@ -1,14 +1,18 @@
 package com.rioxfranky.dosbox;
 
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.os.Build;
 import android.text.InputType;
 import android.view.Choreographer;
+import android.view.GestureDetector;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.inputmethod.EditorInfo;
@@ -20,27 +24,86 @@ final class ScreenView extends View implements Choreographer.FrameCallback {
         void onSessionEnded();
     }
 
+    private static final int CELL_WIDTH = 16;
+    private static final int CELL_HEIGHT = 32;
+    private static final int IMAGE_WIDTH = NativeBridge.COLUMNS * CELL_WIDTH;
+    private static final int IMAGE_HEIGHT = NativeBridge.ROWS * CELL_HEIGHT;
+    private static final float MAX_ZOOM = 4f;
+    private static final float DOUBLE_TAP_ZOOM = 2.2f;
     private static final long CURSOR_BLINK_NANOS = 266_000_000L;
+    private static final int FRAME_COLOR = 0xFF2A2A2A;
 
     private final byte[] screen = new byte[NativeBridge.SCREEN_BYTES];
+    private final byte[] drawn = new byte[NativeBridge.CELL_BYTES];
+    private final Bitmap image = Bitmap.createBitmap(IMAGE_WIDTH, IMAGE_HEIGHT, Bitmap.Config.ARGB_8888);
+    private final Canvas imageCanvas = new Canvas(image);
     private final Paint fill = new Paint();
     private final Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final int[] columnEdges = new int[NativeBridge.COLUMNS + 1];
-    private final int[] rowEdges = new int[NativeBridge.ROWS * 2 + 1];
+    private final Paint blit = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG);
+    private final RectF target = new RectF();
+    private final ScaleGestureDetector scaleDetector;
+    private final GestureDetector gestureDetector;
     private SessionListener sessionListener;
     private int version = -1;
+    private boolean imageValid;
+    private boolean drawnBlink;
     private boolean cursorOn = true;
     private long lastBlink;
     private boolean wasRunning;
     private boolean keyboardRequested;
     private float textBaseline;
+    private float zoom = 1f;
+    private float panX;
+    private float panY;
 
     ScreenView(Context context) {
         super(context);
         setFocusable(true);
         setFocusableInTouchMode(true);
-        setBackgroundColor(0xFF000000);
+        setBackgroundColor(FRAME_COLOR);
         text.setTypeface(Typeface.MONOSPACE);
+        text.setTextSize(CELL_HEIGHT * 0.8f);
+        float glyphWidth = text.measureText("M");
+        if (glyphWidth > 0) {
+            text.setTextScaleX(CELL_WIDTH * 0.96f / glyphWidth);
+        }
+        Paint.FontMetrics metrics = text.getFontMetrics();
+        textBaseline = (CELL_HEIGHT - (metrics.descent - metrics.ascent)) / 2f - metrics.ascent;
+        imageCanvas.drawColor(0xFF000000);
+        scaleDetector = new ScaleGestureDetector(context, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            @Override
+            public boolean onScale(ScaleGestureDetector detector) {
+                zoomAround(zoom * detector.getScaleFactor(), detector.getFocusX(), detector.getFocusY());
+                return true;
+            }
+        });
+        gestureDetector = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
+            @Override
+            public boolean onDown(MotionEvent event) {
+                return true;
+            }
+
+            @Override
+            public boolean onScroll(MotionEvent first, MotionEvent event, float distanceX, float distanceY) {
+                panX -= distanceX;
+                panY -= distanceY;
+                invalidate();
+                return true;
+            }
+
+            @Override
+            public boolean onDoubleTap(MotionEvent event) {
+                if (zoom > 1.05f) {
+                    zoom = 1f;
+                    panX = 0f;
+                    panY = 0f;
+                    invalidate();
+                } else {
+                    zoomAround(DOUBLE_TAP_ZOOM, event.getX(), event.getY());
+                }
+                return true;
+            }
+        });
     }
 
     void setSessionListener(SessionListener listener) {
@@ -62,8 +125,12 @@ final class ScreenView extends View implements Choreographer.FrameCallback {
     @Override
     public void doFrame(long frameTimeNanos) {
         int current = NativeBridge.readScreen(screen);
-        boolean changed = current != version;
-        version = current;
+        boolean changed = false;
+        if (current != version) {
+            version = current;
+            renderImage();
+            changed = true;
+        }
         if (frameTimeNanos - lastBlink > CURSOR_BLINK_NANOS) {
             lastBlink = frameTimeNanos;
             cursorOn = !cursorOn;
@@ -80,78 +147,99 @@ final class ScreenView extends View implements Choreographer.FrameCallback {
         Choreographer.getInstance().postFrameCallback(this);
     }
 
-    @Override
-    protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
-        super.onSizeChanged(width, height, oldWidth, oldHeight);
-        float pixel = Math.min(width / (float) NativeBridge.COLUMNS, height / (float) (NativeBridge.ROWS * 2));
-        float left = (width - pixel * NativeBridge.COLUMNS) / 2f;
-        float top = (height - pixel * NativeBridge.ROWS * 2) / 2f;
-        for (int index = 0; index < columnEdges.length; index++) {
-            columnEdges[index] = Math.round(left + index * pixel);
+    private void renderImage() {
+        boolean blink = screen[NativeBridge.CELL_BYTES + 3] != 0;
+        boolean everything = !imageValid || blink != drawnBlink;
+        for (int cell = 0; cell < NativeBridge.COLUMNS * NativeBridge.ROWS; cell++) {
+            int index = cell * 2;
+            if (!everything && drawn[index] == screen[index] && drawn[index + 1] == screen[index + 1]) {
+                continue;
+            }
+            drawCell(cell % NativeBridge.COLUMNS, cell / NativeBridge.COLUMNS, screen[index] & 0xFF, screen[index + 1] & 0xFF, blink);
+            drawn[index] = screen[index];
+            drawn[index + 1] = screen[index + 1];
         }
-        for (int index = 0; index < rowEdges.length; index++) {
-            rowEdges[index] = Math.round(top + index * pixel);
+        drawnBlink = blink;
+        imageValid = true;
+    }
+
+    private void drawCell(int column, int row, int character, int attribute, boolean blink) {
+        int left = column * CELL_WIDTH;
+        int top = row * CELL_HEIGHT;
+        int right = left + CELL_WIDTH;
+        int bottom = top + CELL_HEIGHT;
+        int middleY = top + CELL_HEIGHT / 2;
+        int middleX = left + CELL_WIDTH / 2;
+        int foreground = Palette.foreground(attribute);
+        fill.setColor(Palette.background(attribute, blink));
+        imageCanvas.drawRect(left, top, right, bottom, fill);
+        fill.setColor(foreground);
+        switch (character) {
+            case 0x00:
+            case 0x20:
+            case 0xFF:
+                return;
+            case 0xDB:
+                imageCanvas.drawRect(left, top, right, bottom, fill);
+                return;
+            case 0xDF:
+                imageCanvas.drawRect(left, top, right, middleY, fill);
+                return;
+            case 0xDC:
+                imageCanvas.drawRect(left, middleY, right, bottom, fill);
+                return;
+            case 0xDD:
+                imageCanvas.drawRect(left, top, middleX, bottom, fill);
+                return;
+            case 0xDE:
+                imageCanvas.drawRect(middleX, top, right, bottom, fill);
+                return;
+            default:
+                text.setColor(foreground);
+                imageCanvas.save();
+                imageCanvas.clipRect(left, top, right, bottom);
+                imageCanvas.drawText(Cp437.glyph(character), left + CELL_WIDTH * 0.02f, top + textBaseline, text);
+                imageCanvas.restore();
         }
-        float cellHeight = pixel * 2f;
-        text.setTextSize(cellHeight * 0.82f);
-        text.setTextScaleX(1f);
-        float glyphWidth = text.measureText("M");
-        if (glyphWidth > 0) {
-            text.setTextScaleX(pixel * 0.98f / glyphWidth);
-        }
-        Paint.FontMetrics metrics = text.getFontMetrics();
-        textBaseline = (cellHeight - (metrics.descent - metrics.ascent)) / 2f - metrics.ascent;
+    }
+
+    private float baseScale() {
+        return Math.min(getWidth() / (float) IMAGE_WIDTH, getHeight() / (float) IMAGE_HEIGHT);
+    }
+
+    private void clampPan() {
+        float scale = baseScale() * zoom;
+        float spareX = Math.max(0f, (IMAGE_WIDTH * scale - getWidth()) / 2f);
+        float spareY = Math.max(0f, (IMAGE_HEIGHT * scale - getHeight()) / 2f);
+        panX = Math.max(-spareX, Math.min(spareX, panX));
+        panY = Math.max(-spareY, Math.min(spareY, panY));
+    }
+
+    private void zoomAround(float requested, float focusX, float focusY) {
+        float next = Math.max(1f, Math.min(MAX_ZOOM, requested));
+        float ratio = next / zoom;
+        float offsetX = focusX - getWidth() / 2f;
+        float offsetY = focusY - getHeight() / 2f;
+        panX = offsetX - (offsetX - panX) * ratio;
+        panY = offsetY - (offsetY - panY) * ratio;
+        zoom = next;
+        invalidate();
     }
 
     @Override
     protected void onDraw(Canvas canvas) {
-        boolean blink = screen[NativeBridge.CELL_BYTES + 3] != 0;
-        for (int row = 0; row < NativeBridge.ROWS; row++) {
-            int top = rowEdges[row * 2];
-            int middle = rowEdges[row * 2 + 1];
-            int bottom = rowEdges[row * 2 + 2];
-            for (int column = 0; column < NativeBridge.COLUMNS; column++) {
-                int index = (row * NativeBridge.COLUMNS + column) * 2;
-                int character = screen[index] & 0xFF;
-                int attribute = screen[index + 1] & 0xFF;
-                int left = columnEdges[column];
-                int right = columnEdges[column + 1];
-                int center = (left + right) / 2;
-                int foreground = Palette.foreground(attribute);
-                fill.setColor(Palette.background(attribute, blink));
-                canvas.drawRect(left, top, right, bottom, fill);
-                fill.setColor(foreground);
-                switch (character) {
-                    case 0x00:
-                    case 0x20:
-                    case 0xFF:
-                        break;
-                    case 0xDB:
-                        canvas.drawRect(left, top, right, bottom, fill);
-                        break;
-                    case 0xDF:
-                        canvas.drawRect(left, top, right, middle, fill);
-                        break;
-                    case 0xDC:
-                        canvas.drawRect(left, middle, right, bottom, fill);
-                        break;
-                    case 0xDD:
-                        canvas.drawRect(left, top, center, bottom, fill);
-                        break;
-                    case 0xDE:
-                        canvas.drawRect(center, top, right, bottom, fill);
-                        break;
-                    default:
-                        text.setColor(foreground);
-                        canvas.drawText(Cp437.glyph(character), left, top + textBaseline, text);
-                        break;
-                }
-            }
-        }
-        drawCursor(canvas);
+        clampPan();
+        float scale = baseScale() * zoom;
+        float width = IMAGE_WIDTH * scale;
+        float height = IMAGE_HEIGHT * scale;
+        float left = (getWidth() - width) / 2f + panX;
+        float top = (getHeight() - height) / 2f + panY;
+        target.set(left, top, left + width, top + height);
+        canvas.drawBitmap(image, null, target, blit);
+        drawCursor(canvas, left, top, scale);
     }
 
-    private void drawCursor(Canvas canvas) {
+    private void drawCursor(Canvas canvas, float left, float top, float scale) {
         boolean visible = screen[NativeBridge.CELL_BYTES + 2] != 0;
         if (!visible || !cursorOn) {
             return;
@@ -159,11 +247,25 @@ final class ScreenView extends View implements Choreographer.FrameCallback {
         int row = Math.min(screen[NativeBridge.CELL_BYTES] & 0xFF, NativeBridge.ROWS - 1);
         int column = Math.min(screen[NativeBridge.CELL_BYTES + 1] & 0xFF, NativeBridge.COLUMNS - 1);
         int attribute = screen[(row * NativeBridge.COLUMNS + column) * 2 + 1] & 0xFF;
-        int top = rowEdges[row * 2];
-        int bottom = rowEdges[row * 2 + 2];
-        int thickness = Math.max(2, (bottom - top) / 7);
+        float cellLeft = left + column * CELL_WIDTH * scale;
+        float cellBottom = top + (row + 1) * CELL_HEIGHT * scale;
         fill.setColor(Palette.foreground(attribute));
-        canvas.drawRect(columnEdges[column], bottom - thickness, columnEdges[column + 1], bottom, fill);
+        canvas.drawRect(cellLeft, cellBottom - CELL_HEIGHT * scale / 7f, cellLeft + CELL_WIDTH * scale, cellBottom, fill);
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        scaleDetector.onTouchEvent(event);
+        gestureDetector.onTouchEvent(event);
+        if (event.getActionMasked() == MotionEvent.ACTION_UP) {
+            performClick();
+        }
+        return true;
+    }
+
+    @Override
+    public boolean performClick() {
+        return super.performClick();
     }
 
     void showKeyboard() {
@@ -196,20 +298,6 @@ final class ScreenView extends View implements Choreographer.FrameCallback {
             }
         }
         return keyboardRequested;
-    }
-
-    @Override
-    public boolean onTouchEvent(MotionEvent event) {
-        if (event.getAction() == MotionEvent.ACTION_UP) {
-            showKeyboard();
-            performClick();
-        }
-        return true;
-    }
-
-    @Override
-    public boolean performClick() {
-        return super.performClick();
     }
 
     @Override
