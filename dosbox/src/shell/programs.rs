@@ -48,6 +48,7 @@ impl Shell {
             return Ok(());
         }
         let outcome = self.machine.run();
+        self.machine.net.close();
         self.machine.dos.files.close_all();
         self.machine.keyboard.clear();
         if self.machine.video.mode != 3 && self.machine.video.mode != 2 && self.machine.video.mode != 7 {

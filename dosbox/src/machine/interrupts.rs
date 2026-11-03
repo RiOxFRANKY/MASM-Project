@@ -31,6 +31,7 @@ impl Machine {
             0x20 => Err(Halt::Exit(0)),
             0x21 => self.dos_service(),
             0x27 => Err(Halt::Exit(0)),
+            0x61 => self.network_service(),
             0x29 => {
                 let character = self.cpu.regs.al();
                 self.video.teletype(&mut self.memory, character, None);

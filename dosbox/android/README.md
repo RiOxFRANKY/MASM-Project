@@ -43,10 +43,11 @@ The app is laid out like a handheld game emulator, in portrait. The 80 × 25 DOS
 
 ### The maze game
 
-The app starts `MAZE` by itself. On the first start it copies `MAZE.ASM` to `C:\` and assembles it first (`masm MAZE.ASM;` then `link MAZE.OBJ;`).
+The app starts `MAZE` by itself. On first launch, and after an update changes the bundled source, it copies `MAZE.ASM` to `C:\` and assembles it (`masm MAZE.ASM;` then `link MAZE.OBJ;`).
 
-- **Menu:** LEFT (`1`) starts you vs the computer, and START (`3`) the cognitive study. Two-player mode is switched off for now.
-- **In the race:** steer with the D-pad. **A** shows your shortest path to the exit until your next move. The A\* bot races you in the right-hand maze; you see its whole maze, but it only knows the squares it has seen near itself.
+- **Menu:** LEFT (`1`) starts you vs the computer, RIGHT (`2`) starts network PvP, and START (`3`) starts the cognitive study.
+- **Against the computer:** steer with the D-pad. **A** shows your shortest path to the exit until your next move. The A\* bot races you in the right-hand maze; you see its whole maze, but it only knows the squares it has seen near itself.
+- **Network PvP:** start the [maze server](../../server/README.md) on a PC reachable by both phones or PCs. Press RIGHT (`2`) on each device, then use SELECT to type the server's IP address and port. The last address is saved in `C:\MAZE.CFG`. Both players steer the left maze with the D-pad; the right maze shows the opponent live. Each level starts after both players are ready. Network play needs access to the server's TCP port on the same Wi-Fi or another reachable network.
 - **Speed:** ►► speeds everything up; **B** goes back.
 - **Leaving:** B from the game's menu leaves the game. Type `MAZE` to start it again.
 
@@ -81,7 +82,7 @@ gradlew.bat assembleRelease
 
 You can also open the `android` folder in Android Studio and press Run.
 
-The build compiles the Rust core (`native/`) for each CPU type with the NDK linker. It then packs the libraries and `Code/MAZE.ASM` into the APK. The release APK is signed with the debug key so it can be installed directly. Use your own key before publishing it on a store.
+The build compiles the Rust core (`native/`) for each CPU type with the NDK linker. It then packs the libraries and `Code/MAZE.ASM` into the APK. The app has Android's internet permission for network PvP. When the bundled maze source changes, the app replaces its installed `MAZE.ASM` and rebuilds `MAZE.EXE` on the next launch. The release APK is signed with the debug key so it can be installed directly. Use your own key before publishing it on a store.
 
 ## How it is put together
 

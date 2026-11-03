@@ -13,10 +13,10 @@
 - Every square, wall or path, is one small square pixel.
 - **Blue** squares are walls and **magenta** is the exit.
 - Both sides get **the same maze**, side by side, and race to the exit.
-- The start menu offers **1** = you vs the computer, **3** = cognitive study, and **ESC** = back to DOS. **2** (two players) is switched off for now and is shown greyed out.
+- The start menu offers **1** = you vs the computer, **2** = network PvP, **3** = cognitive study, and **ESC** = back to DOS.
 
-**Rules (both modes)**
-- Every round starts with a **3, 2, 1, START!** countdown. The clock and the computer start only at START!, and keys pressed during the countdown are ignored.
+**Rules (race modes)**
+- Every round starts with a **3, 2, 1, START!** countdown. The clock and the computer, when present, start only at START!, and keys pressed during the countdown are ignored.
 - The first one to reach the exit wins the level.
 - If the time runs out, whoever is **closer to the exit** wins, counted in steps along the maze. Equal distance is a draw.
 - The level winner scores a point, and the final screen shows the match winner.
@@ -45,15 +45,18 @@
 - The bot moves at full speed. **SPACE** switches its run to a slow, 18 steps/s view and back. **ESC** returns to the menu.
 - **It always finishes.** If a try finds no new wall, the bot walked its first plan. That plan is a shortest path on a map where unseen squares count as open, so it can't be longer than the real shortest path. Every other try uncovers at least one new wall, and a maze has only so many walls.
 
-**Two players (PvP)**, switched off for now
-- **Player 1** (green) plays the left maze with **W A S D**. **Player 2** (cyan) plays the right maze with the **arrow keys**.
-- The code is still in place; only the menu entry is disabled.
+**Two players over the network (PvP)**
+- Run the [maze server](server/README.md) on a PC reachable by both players: `cargo run --release --manifest-path server/Cargo.toml -- <port>`. The server prints the LAN IP address to enter on each device.
+- Each player runs `MAZE` in this repository's DOSBox-RS desktop emulator or Android app, presses **2**, and enters the server IP and port. The game remembers the last values in `C:\MAZE.CFG`.
+- The first two searching players are paired and receive the same maze seed. Each player steers the left maze with the arrows or W A S D; the right maze shows the opponent's moves live.
+- Both players wait for the other before each level's countdown. The server decides who reached the exit first, or whose remaining path is shorter at time-out. If either player leaves, the other is notified.
+- Network PvP requires DOSBox-RS's `INT 61h` service. Other DOS emulators do not provide it. Both players must be able to reach the server's TCP port; allow it through the PC firewall if needed.
 
 **After every level**
 - **yellow** = the optimal (shortest) path
 - **red** = the path the player actually walked
 - **orange** = squares on both
-- In PvP, each maze shows its own player's path.
+- In network PvP, each maze shows its own player's path.
 - Press **ENTER** for the next level.
 
 ## Problem Statement
@@ -84,7 +87,7 @@ See [dosbox/README.md](dosbox/README.md) for details.
 
 [dosbox/android](dosbox/android/README.md) builds the same emulator as an Android app (`.apk`). It is laid out like a handheld game emulator: D-pad = arrows, LEFT = `1`, RIGHT = `2`, START = `3`, A = ENTER (and hint), B = ESC, SELECT = keyboard, ►► = speed. Double-tap or pinch the screen to zoom.
 
-The app assembles and links `MAZE.ASM` the first time, then starts `MAZE` by itself. Other `.EXE` files can be added with **Import files**.
+The app assembles and links `MAZE.ASM` on first use and when the bundled source changes, then starts `MAZE` by itself. Other `.EXE` files can be added with **Import files**.
 
 ### MASM + LINK (in DOSBox)
 
@@ -125,7 +128,7 @@ A few terms come up often:
 
 | Name | Meaning |
 |---|---|
-| `players` | 1 = you vs the computer, 2 = PvP |
+| `players` | 1 = you vs the computer, 2 = network PvP, 3 = cognitive study |
 | `msize`, `cells` | Side of the current grid (15, 24 or 36) and `side * side` |
 | `grid` | 0 = wall, 1 = open, one byte per square. Both sides share it. |
 | `who` | The player being moved or drawn (0 = left, 1 = right / computer) |
@@ -199,19 +202,19 @@ Normally attribute bit 7 makes text blink. `INT 10h` with `AX=1003h, BL=0` turns
 
 ## 4. Playing
 
-**Reading keys.** Keys are read with `INT 16h`, which returns the scan code in `AH` and the character in `AL`. `keydir` turns a key into a direction (an offset into `deltas`) and an owner:
+**Reading keys.** Keys are read with `INT 16h`, which returns the scan code in `AH` and the character in `AL`. `keydir` turns a key into a direction (an offset into `deltas`):
 
-| Keys | `AL` | Owner (`DL`) |
+| Keys | `AL` | Direction source |
 |---|---|---|
-| W A S D | the letter | player 1 |
-| Arrows | 0 or `E0h` (scan code in `AH`) | player 2 (against the computer, both groups move you) |
+| W A S D | the letter | local player |
+| Arrows | 0 or `E0h` (scan code in `AH`) | local player |
 
 **Moving.** `trymove` checks the square in direction `BX` for player `who`, and ignores walls. `applymove` then:
 - updates `ppos` and `steps`;
 - sets the square in that player's `trail`;
 - repaints only the old and new squares.
 
-The computer uses `applymove` too.
+The computer and received opponent moves use `applymove` too. In network PvP, each local move is sent to the server for relay.
 
 **Countdown (`countdown`).** Before every round, `cdstep` shows `3`, `2` and `1` for 18 clock ticks (one second) each, then `START!` for half a second. It shows them on row 19, between the level info and the clock.
 - While it waits, it takes keys out of the buffer and ignores them. ESC returns to the menu.
@@ -219,10 +222,10 @@ The computer uses `applymove` too.
 
 **The race loop (`duel`).** One loop serves both modes, and it never blocks:
 1. `timeleft` reads the clock (`INT 1Ah`) and compares the ticks since `tstart` with `tlimit`. The clock ticks 18.2 times a second, so 30 s = 546 ticks. It returns the seconds left, which `showtime` displays (in red for the last 10 s).
-2. Against the computer, `botturn` lets the bot take one step whenever `botspd` ticks have passed since its last step.
+2. Against the computer, `botturn` lets the bot take one step whenever `botspd` ticks have passed since its last step. In network PvP, `netpump` applies opponent moves and reads the server's verdict.
 3. `INT 16h AH=01h` checks for a key without waiting. When there is none, `HLT` sleeps until the next interrupt (a key or a clock tick) instead of spinning the CPU.
-4. A key moves its owner's maze. The first one whose move lands on the exit wins (`reason = 0`).
-5. When the time runs out, the two `dexit` values are compared: the smaller one wins, and equal values are a draw (`reason = 1`). `dexit` counts real steps through the maze to the exit. The same numbers are shown live as `Dist` under each maze.
+4. A movement key moves your maze. Against the computer, the first one whose move lands on the exit wins (`reason = 0`). In PvP, the server decides which exit report arrived first.
+5. When the time runs out, the two `dexit` values are compared in computer mode. In PvP, each player sends the remaining distance to the server for a verdict. The smaller distance wins; equal distances are a draw (`reason = 1`). `dexit` counts real steps through the maze to the exit. The same numbers are shown live as `Dist` under each maze.
 
 ## 4b. The computer player
 
@@ -265,21 +268,23 @@ When a level ends, `showresult` runs:
 
 A player who stopped before the exit (time-out) is still drawn where they stood.
 
-3. `result2` adds a point to the level winner and prints the winner and the reason, plus the colour legend. The computer's maze shows its walked path in red, so you can see where it went.
+3. `result2` adds a point to the level winner and prints the winner and the reason, plus the colour legend. The right maze shows the computer's or opponent's walked path in red, so you can see where it went.
 4. **ENTER** continues and **ESC** returns to the menu. After level 3, `finalscreen` shows the match result.
 
 ## 6. Summary
 
 ```
-menu (1 = vs computer / 2 = PvP / ESC)
+menu (1 = vs computer / 2 = network PvP / 3 = study / ESC)
   -> for each level (15, 24, 36):
        buildmaze: DFS -> exit -> BFS x2 -> open a shortcut -> extra loops -> BFS
        draw 2 identical mazes + bottom panel, start the clock
        vs computer: botinit (border + exit only) -> botlook -> botplan (A*)
-       countdown: 3, 2, 1, START! -> start the clock and the bot
+       network PvP: wait for both players to be ready
+       countdown: 3, 2, 1, START! -> start the clock and the bot, if present
        duel: time left? -> bot due? (step, look, replan on new wall)
-             -> key waiting? -> move you / P1 (WASD) / P2 (arrows), else HLT
-             first on the exit wins; at time-out the smaller dexit wins
+             -> key waiting? -> move you (WASD or arrows), else HLT
+             vs computer: first on the exit wins; at time-out compare dexit
+             network PvP: relay moves and wait for the server's verdict
        result: yellow optimal / red walked / orange both, score, wait for ENTER
   -> final screen (match winner) -> menu
 ```

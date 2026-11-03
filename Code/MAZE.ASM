@@ -134,6 +134,31 @@ hhist   dw MAXTRY dup(0)        ; length of every one of your tries
 srtry   db 3 dup(0)             ; bot tries needed on each stage
 srhum   db 3 dup(0)             ; your tries needed on each stage
 srwin   db 3 dup(0)             ; who learned faster: 0 bot, 1 you, 2 tie
+
+; ---- network PvP (mode 2) ----------------------------------------------
+; DOS has no networking, so mode 2 uses the network service of the
+; DOSBox-RS emulator on INT 61h (it speaks WebSocket to the PvP server):
+;   AH=0 present? (AX = 4E57h)   AH=1 connect DS:SI host, DX port
+;   AH=2 AL = status             AH=3 send DS:SI, CX bytes
+;   AH=4 receive into DS:DI, at most CX bytes -> CX bytes, AL = status
+;   AH=5 close                   status: 0 closed 1 connecting 2 open 3 failed
+NETINT  equ 61h
+NETMAX  equ 16                  ; longest message the game exchanges
+NS_OPEN equ 2
+NS_FAIL equ 3
+netlive db 0                    ; 1 = a connection is open (or opening)
+myslot  db 0                    ; 0 or 1: our side as the server sees it
+netdone db 0                    ; 1 = we reported our exit / time-out
+netport dw 0                    ; server port
+nettick dw 0                    ; clock tick when matchmaking started
+netsecs dw 0                    ; seconds shown while matchmaking
+elmax   dw 0                    ; editline: longest allowed text
+hostbuf db 41 dup(0)            ; server IP or name (ASCIIZ)
+portbuf db '9000', 0, 0         ; server port as text (ASCIIZ)
+cfgbuf  db 64 dup(0)            ; MAZE.CFG contents
+netin   db NETMAX dup(0)        ; last message received
+netout  db 8 dup(0)             ; message being sent
+dfcur   db 0                    ; drawfield: 1 = show the text cursor
 sropt   dw 3 dup(0)             ; optimal length of each stage
 
 numbuf  db '0000$'              ; vnum4 output buffer
@@ -144,17 +169,17 @@ msgm1   db '1   One player vs the computer$'
 msgm1a  db 'Race an A* bot through the same maze. You: arrows or W A S D.$'
 msgm1b  db 'The bot only sees 2 / 3 / 4 squares around it (by level) and$'
 msgm1c  db 'replans every time it finds a wall. You see its whole maze.$'
-msgm2   db '2   Two players (PvP) - not available right now$'
-msgm2a  db 'Both players get the same maze, side by side.$'
-msgm2b  db 'Player 1: W A S D (left)   Player 2: arrow keys (right)$'
-msgm2c  db 'Mazes: 15x15, 24x24, 36x36. Time limit 30 / 45 / 60 seconds.$'
-msgm2d  db 'First to the exit wins; at time-out the closer one wins.$'
+msgm2   db '2   Two players over the network (PvP)$'
+msgm2a  db 'Each player runs MAZE on their own PC or phone and presses 2,$'
+msgm2b  db 'then types the server IP and port; the server pairs them up.$'
+msgm2c  db 'Start the server on one PC in the same Wi-Fi:  maze <port>$'
+msgm2d  db 'Same maze for both. First to the exit wins (30/45/60 s).$'
 msgm5   db '3   Cognitive study (the bot learns)$'
 msgm5a  db 'The bot runs one maze again and again, keeping what it has$'
 msgm5b  db 'seen, until it walks the optimal path. Then you do the same$'
 msgm5c  db 'on that maze and both learning curves are compared. 3 stages.$'
 msgm3   db 'ESC Exit to DOS$'
-msgm4   db 'Press 1 or 3$'
+msgm4   db 'Press 1, 2 or 3$'
 msgstud db ' COGNITIVE STUDY - THE BOT LEARNS ONE MAZE $'
 msgstg  db 'Stage $'
 msgsopt db 'Optimal path  $'
@@ -214,10 +239,9 @@ msgof   db ' of 3$'
 msggrid db 'Grid  $'
 msgx    db ' x $'
 msgany  db 'Press any key for the menu$'
-msgp1   db ' PLAYER 1  W A S D $'
-msgp2   db ' PLAYER 2  ARROW KEYS $'
 msgyou  db ' YOU  ARROWS / W A S D $'
 msgcpu  db ' COMPUTER BOT $'
+msgopp  db ' OPPONENT (NETWORK) $'
 msgcd3  db '    3     $'
 msgcd2  db '    2     $'
 msgcd1  db '    1     $'
@@ -227,17 +251,15 @@ msgtime db 'Time left  $'
 msgsec  db ' s$'
 msgmv2  db 'Moves $'
 msgds2  db '  Dist $'
-msgscr  db 'Score   P1  $'
 msgscr2 db '  :  $'
-msgscr3 db '  P2$'
 msgscy  db 'Score   YOU  $'
 msgscc  db '  CPU$'
-msghelp db 'First to the exit wins. At time-out the closer player wins.  ESC = menu$'
+msgsco  db '  OPP$'
+msghlpn db 'First to the exit wins. At time-out the closer one wins.  ESC = leave$'
 msghlpc db 'Race the bot to the exit.  H or ENTER = hint   ESC = menu$'
-msgw1   db ' PLAYER 1 WINS THE LEVEL $'
-msgw2   db ' PLAYER 2 WINS THE LEVEL $'
 msgwy   db ' YOU WIN THE LEVEL $'
 msgwc   db ' THE COMPUTER WINS THE LEVEL $'
+msgwo   db ' YOUR OPPONENT WINS THE LEVEL $'
 msgdraw db ' DRAW $'
 msgrx   db ' - reached the exit first$'
 msgrt   db ' - time up, closer to the exit$'
@@ -246,13 +268,32 @@ msglegd db ' optimal   $'
 msglegt db ' own path   $'
 msglegb db ' both    ENTER = continue  ESC = menu$'
 msgfin  db 'FINAL SCORE$'
-msgfp1  db 'P1  $'
 msgfpy  db 'YOU  $'
-msgfw1  db ' PLAYER 1 WINS THE MATCH! $'
-msgfw2  db ' PLAYER 2 WINS THE MATCH! $'
 msgfwy  db ' YOU WIN THE MATCH! $'
 msgfwc  db ' THE COMPUTER WINS THE MATCH! $'
+msgfwo  db ' YOUR OPPONENT WINS THE MATCH! $'
 msgfdr  db ' THE MATCH IS A DRAW $'
+
+; ---- network PvP ------------------------------------------------------
+msgnt   db ' NETWORK PvP $'
+msgnh1  db 'Both players connect to the same server, running on a PC in this$'
+msgnh2  db 'network with:   maze <port>      (it prints the IP address to use)$'
+msgnip  db 'Server IP : $'
+msgnpt  db 'Port      : $'
+msgnk   db 'ENTER = next / connect    BACKSPACE = delete    ESC = back$'
+msgncon db 'Connecting to the server...                                     $'
+msgnsrc db 'Searching for an opponent...  $'
+msgnsec db ' s     $'
+msgnfnd db 'Opponent found! Get ready...                                    $'
+msgnbad db 'Could not connect to that server. Check the IP address and port. $'
+msgnprt db 'The port must be a number from 1 to 65535.                      $'
+msgnlst db 'The connection to your opponent was lost.$'
+msgnno1 db 'Network play needs DOSBox-RS, the emulator in this project$'
+msgnno2 db '(on a PC or on the Android app).$'
+msgnwt  db 'Waiting for your opponent to be ready...    ESC = leave                  $'
+msgnkey db 'Press any key$'
+cfgname db 'MAZE.CFG',0
+crlf    db 13,10
 
 ; ---- grids (only the first msize*msize entries are used) ---------------
 grid    db MAXC dup(0)          ; 0 = wall, 1 = open
@@ -294,6 +335,7 @@ main proc
     mov seed,dx                 ; a different maze every run
 
 menu:
+    call netclose               ; leaving a network game hangs up
     call initscreen
     call drawmenu
 mn_key:
@@ -303,11 +345,18 @@ mn_key:
     je exit_dos
     cmp al,'1'
     je mn_one
-    cmp al,'3'                  ; '2' (PvP) is switched off for now
+    cmp al,'2'
+    je mn_two
+    cmp al,'3'
     jne mn_key
     mov players,3
     call study                  ; mode 3 runs its own three stages
     jmp menu
+mn_two:
+    mov players,2
+    call netsetup               ; server address, connect, matchmaking
+    jc menu                     ; cancelled or no connection
+    jmp mn_play
 mn_one:
     mov players,1
 mn_play:
@@ -319,6 +368,12 @@ next_level:
     call setup                  ; size and step table for this level
     call buildmaze              ; random maze with several routes
     call initlevel              ; players, trails, screen, bot
+    cmp players,2
+    jne nl_count
+    call netsync                ; both players ready: the server says go
+    or al,al
+    jnz menu
+nl_count:
     call countdown              ; 3, 2, 1, START! - then the clock runs
     or al,al
     jnz menu                    ; ESC pressed during the countdown
@@ -573,24 +628,41 @@ cd_out:
 cdstep endp
 
 ; ===========================================================================
-; duel - race loop with time limit (player vs player or player vs bot)
-;        OUT: AL = 0 level finished (winner, reason set), AL = 1 ESC
+; duel - race loop with time limit: you (left, arrows or W A S D) against
+;        the bot or a network opponent (right)
+;        OUT: AL = 0 level finished (winner, reason set),
+;             AL = 1 ESC or the network opponent is gone
+;   Over the network the server is the referee: we report reaching the
+;   exit ('F') or our distance at time-out ('D') and wait for its 'R'.
 ; ===========================================================================
 duel proc
+    mov netdone,0
 du_loop:
+    cmp netdone,0
+    jne du_net                  ; we are done: only wait for the verdict
     call timeleft               ; AX = seconds left, CF = 1 time is up
-    jc du_timeout
+    jnc du_intime
+    jmp du_timeout
+du_intime:
     cmp ax,lastsec
     je du_bot
     mov lastsec,ax
     call showtime
 du_bot:
     cmp players,1
-    jne du_poll
+    jne du_net
     call botturn                ; CF = 1 when the bot reached the exit
     jnc du_poll
     mov who,1
     jmp du_won
+du_net:
+    cmp players,2
+    jne du_poll
+    call netpump                ; opponent moves, verdict, or hang-up
+    cmp al,1
+    je du_verdict
+    cmp al,2
+    je du_lost
 du_poll:
     mov ah,01h
     int 16h                     ; ZF = 0 when a key is waiting
@@ -602,7 +674,11 @@ du_key:
     mov ah,0
     int 16h
     cmp al,27
-    je du_esc
+    jne du_notesc
+    jmp du_esc
+du_notesc:
+    cmp netdone,0
+    jne du_loop                 ; finished: keys do nothing any more
     cmp players,1
     jne du_dir
     cmp al,13                   ; against the bot: ENTER or H = hint
@@ -615,15 +691,27 @@ du_hint:
     call showhint
     jmp du_loop
 du_dir:
-    call keydir                 ; DL = player who owns the key
-    jnc du_loop
-    cmp players,1
-    jne du_owner
-    xor dl,dl                   ; against the bot every movement key is yours
-du_owner:
-    mov who,dl
+    call keydir                 ; arrows and W A S D both move you
+    jnc du_again
+    mov who,0
     call trymove
-    jnc du_loop
+    jc du_exit
+du_again:
+    jmp du_loop
+du_exit:
+    cmp players,2
+    jne du_won
+    mov al,'F'                  ; tell the server; it decides who was first
+    call netlevelmsg
+    mov netdone,1
+    jmp du_loop
+du_verdict:
+    xor al,al                   ; winner and reason came from the server
+    ret
+du_lost:
+    call netlost
+    mov al,1
+    ret
 du_won:
     mov al,who                  ; this player reached the exit first
     mov winner,al
@@ -633,6 +721,21 @@ du_won:
 du_timeout:
     xor ax,ax
     call showtime
+    cmp players,2
+    jne du_local
+    mov bx,ppos[0]              ; report how far we still are
+    shl bx,1
+    mov netout[0],'D'
+    mov al,level
+    mov netout[1],al
+    mov ax,dexit[bx]
+    mov word ptr netout[2],ax
+    mov si,offset netout
+    mov cx,4
+    call netsend
+    mov netdone,1
+    jmp du_loop
+du_local:
     mov reason,1
     mov bx,ppos[0]
     shl bx,1
@@ -655,9 +758,8 @@ du_esc:
 duel endp
 
 ; ===========================================================================
-; keydir - is key AX a movement key?
-;          OUT: CF = 1 yes, BX = offset into deltas[],
-;               DL = 0 for W A S D (player 1), 1 for arrow keys (player 2)
+; keydir - is key AX a movement key (arrows or W A S D)?
+;          OUT: CF = 1 yes, BX = offset into deltas[]
 ; ===========================================================================
 keydir proc
     cmp al,0
@@ -751,6 +853,18 @@ applymove proc
     call drawcell               ; draw the player on the new one
     cmp who,0
     jne am_stats
+    cmp players,2
+    jne am_hint
+    mov netout[0],'O'           ; network: send our new square right away
+    mov word ptr netout[1],si
+    push cx
+    push si
+    mov si,offset netout
+    mov cx,3
+    call netsend
+    pop si
+    pop cx
+am_hint:
     cmp hinton,0
     je am_stats
     mov hinton,0                ; your move ends the hint
@@ -2164,16 +2278,12 @@ updstats endp
 drawhud2 proc
     mov dh,0
     mov dl,LEFTX
-    mov si,offset msgp1
-    mov ah,A_P1
-    cmp players,1
-    jne dh_left
     mov si,offset msgyou
-dh_left:
+    mov ah,A_P1
     call vtext
     mov dh,0
     mov dl,RIGHTX
-    mov si,offset msgp2
+    mov si,offset msgopp
     mov ah,A_P2
     cmp players,1
     jne dh_right
@@ -2189,17 +2299,23 @@ dh_right:
     call updstats
     mov who,0
     call showscore
+    call helpline
+    ret
+drawhud2 endp
+
+helpline proc                   ; the rules line at the bottom (row 23)
     mov dh,23
+    call clrrow
     mov dl,LEFTX
-    mov si,offset msghelp
+    mov si,offset msghlpn
     cmp players,1
-    jne dh_help
+    jne hl_show
     mov si,offset msghlpc
-dh_help:
+hl_show:
     mov ah,A_DIM
     call vtext
     ret
-drawhud2 endp
+helpline endp
 
 showtime proc                   ; IN: AX = seconds left
     push ax
@@ -2230,11 +2346,7 @@ showtime endp
 showscore proc
     mov dh,22
     mov dl,LEFTX
-    mov si,offset msgscr
-    cmp players,1
-    jne ss_left
     mov si,offset msgscy
-ss_left:
     mov ah,A_MSG
     call vtext
     mov al,score[0]
@@ -2246,7 +2358,7 @@ ss_left:
     mov al,score[1]
     mov ah,A_P2
     call vnum2
-    mov si,offset msgscr3
+    mov si,offset msgsco
     cmp players,1
     jne ss_right
     mov si,offset msgscc
@@ -2297,21 +2409,15 @@ result2 proc
     je r2_name
     xor bh,bh
     inc score[bx]               ; the level winner scores a point
-    cmp players,1
-    je r2_bot
-    mov si,offset msgw1
-    mov ah,A_WIN
-    or bl,bl
-    jz r2_name
-    mov si,offset msgw2
-    jmp r2_name
-r2_bot:
     mov si,offset msgwy
     mov ah,A_WIN
     or bl,bl
     jz r2_name
-    mov si,offset msgwc
+    mov si,offset msgwo
     mov ah,A_LOSE
+    cmp players,1
+    jne r2_name
+    mov si,offset msgwc
 r2_name:
     call vtext
     mov si,offset msgrx         ; why: exit / closer / equal
@@ -2375,13 +2481,9 @@ finalscreen proc
     mov si,offset msgfin
     mov ah,A_MSG
     call vtext
-    mov dh,11                   ; 'P1  nn  :  nn  P2' / 'YOU  nn  :  nn  CPU'
+    mov dh,11                   ; 'YOU  nn  :  nn  CPU' / '...  OPP'
     mov dl,32
-    mov si,offset msgfp1
-    cmp players,1
-    jne fs_left
     mov si,offset msgfpy
-fs_left:
     mov ah,A_P1
     call vtext
     mov al,score[0]
@@ -2392,7 +2494,7 @@ fs_left:
     mov al,score[1]
     mov ah,A_P2
     call vnum2
-    mov si,offset msgscr3
+    mov si,offset msgsco
     cmp players,1
     jne fs_right
     mov si,offset msgscc
@@ -2405,20 +2507,14 @@ fs_right:
     mov al,score[0]
     cmp al,score[1]
     je fs_show
-    ja fs_first
-    mov si,offset msgfw2        ; the right-hand side won
+    mov si,offset msgfwy        ; you won
     mov ah,A_WIN
+    ja fs_show
+    mov si,offset msgfwo        ; the right-hand side won
+    mov ah,A_LOSE
     cmp players,1
     jne fs_show
     mov si,offset msgfwc
-    mov ah,A_LOSE
-    jmp fs_show
-fs_first:
-    mov si,offset msgfw1        ; the left-hand side won
-    mov ah,A_WIN
-    cmp players,1
-    jne fs_show
-    mov si,offset msgfwy
 fs_show:
     call vtext
     mov dh,15
@@ -3288,5 +3384,698 @@ sf_nottie:
     int 16h
     ret
 studyfinal endp
+
+; ===========================================================================
+; network PvP
+;   messages (first byte = kind):
+;     we send    Q             look for an opponent
+;                Y level       ready for this level
+;                O square      we moved (sent on every step)
+;                F level       we reached the exit
+;                D level dist  time is up, this is our distance to the exit
+;     we get     M slot seed   matched: our side (0/1) and the maze seed
+;                G level       both are ready: start the countdown
+;                O square      the opponent moved
+;                R level winner reason   verdict (winner 0/1 = side, 2 = draw)
+;                X             the opponent left
+; ===========================================================================
+
+; netavail - CF = 0 if the DOSBox-RS network service answers on INT 61h
+netavail proc
+    push ax
+    push es
+    xor ax,ax
+    mov es,ax
+    mov ax,es:[NETINT*4]
+    or ax,es:[NETINT*4+2]       ; an empty vector: nothing installed
+    pop es
+    jz na_no
+    xor ax,ax
+    int NETINT                  ; AH = 0: are you there?
+    cmp ax,4E57h
+    jne na_no
+    pop ax
+    clc
+    ret
+na_no:
+    pop ax
+    stc
+    ret
+netavail endp
+
+netclose proc                   ; hang up (safe to call at any time)
+    cmp netlive,0
+    je nc_done
+    push ax
+    mov ah,5
+    int NETINT
+    pop ax
+    mov netlive,0
+nc_done:
+    ret
+netclose endp
+
+netsend proc                    ; send CX bytes at DS:SI
+    push ax
+    mov ah,3
+    int NETINT
+    pop ax
+    ret
+netsend endp
+
+netrecv proc                    ; OUT: CX = bytes now in netin (0 = none),
+    push di                     ;      AL = connection status
+    mov di,offset netin
+    mov cx,NETMAX
+    mov ah,4
+    int NETINT
+    pop di
+    ret
+netrecv endp
+
+netlevelmsg proc                ; send the two bytes: AL, level
+    push cx
+    push si
+    mov netout[0],al
+    mov al,level
+    mov netout[1],al
+    mov si,offset netout
+    mov cx,2
+    call netsend
+    pop si
+    pop cx
+    ret
+netlevelmsg endp
+
+; ===========================================================================
+; netpump - handle everything that arrived during the race
+;           OUT: AL = 0 nothing special, 1 verdict (winner/reason set),
+;                AL = 2 the opponent left or the connection dropped
+; ===========================================================================
+netpump proc
+np_next:
+    call netrecv
+    jcxz np_empty
+    mov al,netin[0]
+    cmp al,'O'
+    jne np_verdict
+    mov ax,word ptr netin[1]    ; the opponent's new square
+    cmp ax,cells
+    jae np_next
+    mov si,ax
+    cmp grid[si],1
+    jne np_next
+    mov bl,who
+    push bx
+    mov who,1
+    call applymove              ; move the opponent in the right maze
+    pop bx
+    mov who,bl
+    jmp np_next
+np_verdict:
+    cmp al,'R'
+    jne np_left
+    mov al,netin[1]
+    cmp al,level
+    jne np_next                 ; a late message from an earlier level
+    mov al,netin[3]
+    mov reason,al
+    mov al,netin[2]
+    mov winner,2
+    cmp al,2
+    je np_done
+    mov winner,0                ; 0 = we (left), 1 = the opponent (right)
+    cmp al,myslot
+    je np_done
+    mov winner,1
+np_done:
+    mov al,1
+    ret
+np_left:
+    cmp al,'X'
+    jne np_next
+    mov al,2
+    ret
+np_empty:
+    cmp al,NS_OPEN
+    jne np_gone
+    xor al,al
+    ret
+np_gone:
+    mov al,2
+    ret
+netpump endp
+
+; ===========================================================================
+; netsync - before a level: tell the server we are ready and wait for 'G'
+;           OUT: AL = 1 to leave (ESC, or the opponent is gone)
+; ===========================================================================
+netsync proc
+    mov al,'Y'
+    call netlevelmsg
+    mov dh,23
+    call clrrow
+    mov dl,LEFTX
+    mov si,offset msgnwt
+    mov ah,A_HUD
+    call vtext
+ny_loop:
+    call netrecv
+    jcxz ny_none
+    cmp netin[0],'G'
+    jne ny_left
+    mov al,netin[1]
+    cmp al,level
+    jne ny_loop
+    call helpline
+    xor al,al
+    ret
+ny_left:
+    cmp netin[0],'X'
+    jne ny_loop
+    jmp ny_lost
+ny_none:
+    cmp al,NS_OPEN
+    jne ny_lost
+    call esckey
+    jc ny_esc
+    sti
+    hlt
+    jmp ny_loop
+ny_lost:
+    call netlost
+    mov al,1
+    ret
+ny_esc:
+    mov al,1
+    ret
+netsync endp
+
+netlost proc                    ; the opponent is gone: say so, wait a key
+    call netclose
+    mov dh,23
+    call clrrow
+    mov dh,24
+    call clrrow
+    mov dh,23
+    mov dl,LEFTX
+    mov si,offset msgnlst
+    mov ah,A_LOSE
+    call vtext
+    mov dh,24
+    mov dl,LEFTX
+    mov si,offset msgnkey
+    mov ah,A_DIM
+    call vtext
+    mov ah,0
+    int 16h
+    ret
+netlost endp
+
+esckey proc                     ; CF = 1 if ESC was pressed (other keys are
+    push ax                     ; taken out of the buffer and ignored)
+    mov ah,01h
+    int 16h
+    jz ek_no
+    mov ah,0
+    int 16h
+    cmp al,27
+    jne ek_no
+    pop ax
+    stc
+    ret
+ek_no:
+    pop ax
+    clc
+    ret
+esckey endp
+
+pauseticks proc                 ; wait CX clock ticks
+    push ax
+    push bx
+    push dx
+    xor ah,ah
+    int 1Ah
+    mov bx,dx
+pt_loop:
+    xor ah,ah
+    int 1Ah
+    mov ax,dx
+    sub ax,bx
+    cmp ax,cx
+    jae pt_done
+    sti
+    hlt
+    jmp pt_loop
+pt_done:
+    pop dx
+    pop bx
+    pop ax
+    ret
+pauseticks endp
+
+; ===========================================================================
+; netsetup - mode 2: ask for the server, connect and find an opponent
+;            OUT: CF = 0 matched (myslot and seed set), CF = 1 cancelled
+; ===========================================================================
+netsetup proc
+    call netavail
+    jnc nu_ready
+    call cls
+    mov dh,10
+    mov dl,11
+    mov si,offset msgnno1
+    mov ah,A_MSG
+    call vtext
+    mov dh,11
+    mov dl,11
+    mov si,offset msgnno2
+    call vtext
+    mov dh,14
+    mov dl,11
+    mov si,offset msgnkey
+    mov ah,A_DIM
+    call vtext
+    mov ah,0
+    int 16h
+    stc
+    ret
+nu_ready:
+    call loadcfg                ; the last server used, if any
+nu_form:
+    call netform
+    mov dh,9
+    mov dl,18
+    mov di,offset hostbuf
+    mov cx,40
+    call editline
+    jc nu_back
+    mov dh,11
+    mov dl,18
+    mov di,offset portbuf
+    mov cx,5
+    call editline
+    jnc nu_parse
+nu_back:
+    jmp nu_cancel
+nu_parse:
+    call parseport              ; AX = port
+    jnc nu_port
+    mov si,offset msgnprt
+    call netstatus
+    mov ah,0
+    int 16h
+    jmp nu_form
+nu_port:
+    mov netport,ax
+    call savecfg
+    mov si,offset msgncon
+    call netstatus
+    mov si,offset hostbuf
+    mov dx,netport
+    mov ah,1
+    int NETINT                  ; start connecting (in the background)
+    mov netlive,1
+nu_connect:
+    mov ah,2
+    int NETINT                  ; AL = status
+    cmp al,NS_OPEN
+    je nu_open
+    cmp al,1
+    jne nu_failed               ; closed or failed
+    call esckey
+    jc nu_back
+    sti
+    hlt
+    jmp nu_connect
+nu_failed:
+    call netclose
+    mov si,offset msgnbad
+    call netstatus
+    mov ah,0
+    int 16h
+    jmp nu_form
+nu_open:
+    mov netout[0],'Q'           ; matchmaking
+    mov si,offset netout
+    mov cx,1
+    call netsend
+    xor ah,ah
+    int 1Ah
+    mov nettick,dx
+    mov netsecs,0FFFFh
+    mov si,offset msgnsrc
+    call netstatus
+nu_wait:
+    xor ah,ah
+    int 1Ah
+    mov ax,dx
+    sub ax,nettick
+    mov cx,10
+    mul cx
+    mov cx,182
+    div cx                      ; AX = seconds spent searching
+    cmp ax,netsecs
+    je nu_receive
+    mov netsecs,ax
+    mov dh,15
+    mov dl,36
+    mov bl,A_WIN
+    call vnum4
+    mov si,offset msgnsec
+    mov ah,A_HUD
+    call vtext
+nu_receive:
+    call netrecv
+    jcxz nu_quiet
+    cmp netin[0],'M'
+    jne nu_wait
+    mov al,netin[1]
+    mov myslot,al
+    mov ax,word ptr netin[2]
+    mov seed,ax                 ; both players build the same mazes
+    mov si,offset msgnfnd
+    call netstatus
+    mov cx,18
+    call pauseticks
+    clc
+    ret
+nu_quiet:
+    cmp al,NS_OPEN
+    je nu_alive
+    jmp nu_failed
+nu_alive:
+    call esckey
+    jc nu_cancel
+    sti
+    hlt
+    jmp nu_wait
+nu_cancel:
+    call netclose
+    stc
+    ret
+netsetup endp
+
+netform proc                    ; the server address screen
+    call cls
+    mov dh,3
+    mov dl,33
+    mov si,offset msgnt
+    mov ah,A_TITLE
+    call vtext
+    mov dh,5
+    mov dl,6
+    mov si,offset msgnh1
+    mov ah,A_DIM
+    call vtext
+    mov dh,6
+    mov dl,6
+    mov si,offset msgnh2
+    call vtext
+    mov dh,9
+    mov dl,6
+    mov si,offset msgnip
+    mov ah,A_HUD
+    call vtext
+    mov dh,11
+    mov dl,6
+    mov si,offset msgnpt
+    call vtext
+    mov dh,13
+    mov dl,6
+    mov si,offset msgnk
+    mov ah,A_DIM
+    call vtext
+    mov dfcur,0
+    mov dh,9
+    mov dl,18
+    mov di,offset hostbuf
+    mov cx,40
+    call drawfield
+    mov dh,11
+    mov dl,18
+    mov di,offset portbuf
+    mov cx,5
+    call drawfield
+    ret
+netform endp
+
+netstatus proc                  ; status text SI on row 15
+    push ax
+    push dx
+    mov dh,15
+    call clrrow
+    mov dl,6
+    mov ah,A_HUD
+    call vtext
+    pop dx
+    pop ax
+    ret
+netstatus endp
+
+; ===========================================================================
+; drawfield - show the ASCIIZ text at DI (room for CX characters) at row
+;             DH, column DL; with dfcur = 1 a cursor follows the text
+; editline  - edit that text with the keyboard. ENTER = done (CF = 0),
+;             ESC = cancel (CF = 1), BACKSPACE deletes
+; ===========================================================================
+drawfield proc
+    push ax
+    push bx
+    push dx
+    push si
+    mov si,di
+    call strlen
+    mov si,ax                   ; SI = text length
+    xor bx,bx
+df_loop:
+    cmp bx,cx
+    ja df_done
+    cmp bx,si
+    jae df_after
+    mov al,[bx+di]
+    mov ah,A_MSG
+    jmp df_put
+df_after:
+    mov al,' '
+    mov ah,A_MSG
+    cmp bx,si
+    jne df_put
+    cmp dfcur,0
+    je df_put
+    mov al,'_'
+    mov ah,A_WIN
+df_put:
+    call vchar
+    inc bx
+    jmp df_loop
+df_done:
+    pop si
+    pop dx
+    pop bx
+    pop ax
+    ret
+drawfield endp
+
+editline proc
+    push ax
+    push bx
+    push si
+el_draw:
+    mov dfcur,1
+    call drawfield
+el_key:
+    mov ah,0
+    int 16h
+    cmp al,13
+    je el_enter
+    cmp al,27
+    je el_esc
+    push ax
+    mov si,di
+    call strlen
+    mov bx,ax                   ; BX = text length
+    pop ax
+    cmp al,8
+    je el_back
+    cmp al,' '
+    jb el_key
+    cmp al,7Eh
+    ja el_key
+    cmp bx,cx
+    jae el_key                  ; full
+    mov [bx+di],al
+    mov byte ptr [bx+di+1],0
+    jmp el_draw
+el_back:
+    or bx,bx
+    jz el_key
+    dec bx
+    mov byte ptr [bx+di],0
+    jmp el_draw
+el_enter:
+    mov dfcur,0
+    call drawfield
+    clc
+    jmp el_out
+el_esc:
+    stc
+el_out:
+    pop si
+    pop bx
+    pop ax
+    ret
+editline endp
+
+strlen proc                     ; AX = length of the ASCIIZ text at SI
+    push si
+    xor ax,ax
+sl_loop:
+    cmp byte ptr [si],0
+    je sl_done
+    inc si
+    inc ax
+    jmp sl_loop
+sl_done:
+    pop si
+    ret
+strlen endp
+
+parseport proc                  ; AX = number in portbuf, CF = 1 if invalid
+    push bx
+    push cx
+    push dx
+    push si
+    xor ax,ax
+    mov si,offset portbuf
+    cmp byte ptr [si],0
+    je pp_bad
+pp_loop:
+    mov bl,[si]
+    or bl,bl
+    jz pp_end
+    sub bl,'0'
+    cmp bl,9
+    ja pp_bad                   ; not a digit
+    mov cx,10
+    mul cx
+    jc pp_bad                   ; above 65535
+    xor bh,bh
+    add ax,bx
+    jc pp_bad
+    inc si
+    jmp pp_loop
+pp_end:
+    or ax,ax
+    jz pp_bad
+    clc
+    jmp pp_out
+pp_bad:
+    stc
+pp_out:
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    ret
+parseport endp
+
+; ===========================================================================
+; loadcfg / savecfg - remember the last server in C:\MAZE.CFG
+;                     (line 1 = IP or name, line 2 = port)
+; ===========================================================================
+loadcfg proc
+    mov ax,3D00h
+    mov dx,offset cfgname
+    int 21h                     ; open for reading
+    jc lc_done
+    mov bx,ax
+    mov ah,3Fh
+    mov cx,63
+    mov dx,offset cfgbuf
+    int 21h                     ; AX = bytes read
+    jc lc_close
+    mov si,ax
+    mov cfgbuf[si],0
+    mov si,offset cfgbuf
+    mov di,offset hostbuf
+    mov cx,40
+lc_host:
+    mov al,[si]
+    cmp al,' '
+    jb lc_hostend               ; CR, LF or the end
+    jcxz lc_hnext
+    mov [di],al
+    inc di
+    dec cx
+lc_hnext:
+    inc si
+    jmp lc_host
+lc_hostend:
+    mov byte ptr [di],0
+lc_newline:
+    mov al,[si]
+    cmp al,13
+    je lc_skip
+    cmp al,10
+    jne lc_port
+lc_skip:
+    inc si
+    jmp lc_newline
+lc_port:
+    mov di,offset portbuf
+    mov cx,5
+lc_ploop:
+    mov al,[si]
+    cmp al,' '
+    jb lc_pend
+    jcxz lc_pnext
+    mov [di],al
+    inc di
+    dec cx
+lc_pnext:
+    inc si
+    jmp lc_ploop
+lc_pend:
+    mov byte ptr [di],0
+lc_close:
+    mov ah,3Eh
+    int 21h
+lc_done:
+    ret
+loadcfg endp
+
+savecfg proc
+    mov ah,3Ch
+    xor cx,cx
+    mov dx,offset cfgname
+    int 21h                     ; create (or empty) the file
+    jc sc_done
+    mov bx,ax
+    mov si,offset hostbuf
+    call strlen
+    mov cx,ax
+    mov dx,offset hostbuf
+    mov ah,40h
+    int 21h
+    mov cx,2
+    mov dx,offset crlf
+    mov ah,40h
+    int 21h
+    mov si,offset portbuf
+    call strlen
+    mov cx,ax
+    mov dx,offset portbuf
+    mov ah,40h
+    int 21h
+    mov cx,2
+    mov dx,offset crlf
+    mov ah,40h
+    int 21h
+    mov ah,3Eh
+    int 21h
+sc_done:
+    ret
+savecfg endp
 
 end main

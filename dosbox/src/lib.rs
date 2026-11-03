@@ -6,5 +6,6 @@ pub mod hardware;
 pub mod linker;
 pub mod machine;
 pub mod masm;
+pub mod net;
 pub mod shell;
 pub mod terminal;

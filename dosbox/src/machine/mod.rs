@@ -11,6 +11,7 @@ use crate::hardware::keyboard::Keyboard;
 use crate::hardware::memory::Memory;
 use crate::hardware::ports::Ports;
 use crate::hardware::video::{Video, COLUMNS, ROWS};
+use crate::net::Network;
 use crate::terminal::{Frame, Terminal};
 use std::time::{Duration, Instant};
 
@@ -35,6 +36,7 @@ pub struct Machine {
     pub ports: Ports,
     pub dos: Dos,
     pub drive: Drive,
+    pub net: Network,
     terminal: Box<dyn Terminal>,
     last_present: Instant,
 }
@@ -61,6 +63,7 @@ impl Machine {
             ports: Ports::new(),
             dos: Dos::new(),
             drive,
+            net: Network::new(),
             terminal,
             last_present: Instant::now(),
         };
