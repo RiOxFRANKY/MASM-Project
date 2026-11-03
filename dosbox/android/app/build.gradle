@@ -1,0 +1,88 @@
+import org.gradle.internal.os.OperatingSystem
+
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace = 'com.rioxfranky.dosbox'
+    compileSdk = 36
+    ndkVersion = '27.1.12297006'
+
+    defaultConfig {
+        applicationId = 'com.rioxfranky.dosbox'
+        minSdk = 26
+        targetSdk = 34
+        versionCode = 1
+        versionName = '0.1'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled = false
+            signingConfig = signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    sourceSets {
+        main {
+            jniLibs.srcDirs += layout.buildDirectory.dir('rustJniLibs').get().asFile
+            assets.srcDirs += layout.buildDirectory.dir('dosAssets').get().asFile
+        }
+    }
+}
+
+def rustTargets = [
+    'arm64-v8a'  : [triple: 'aarch64-linux-android', clang: 'aarch64-linux-android24-clang'],
+    'armeabi-v7a': [triple: 'armv7-linux-androideabi', clang: 'armv7a-linux-androideabi24-clang'],
+    'x86_64'     : [triple: 'x86_64-linux-android', clang: 'x86_64-linux-android24-clang'],
+]
+
+def nativeDir = file('../native')
+def os = OperatingSystem.current()
+def hostTag = os.windows ? 'windows-x86_64' : (os.macOsX ? 'darwin-x86_64' : 'linux-x86_64')
+def scriptSuffix = os.windows ? '.cmd' : ''
+def cargoHome = System.getenv('CARGO_HOME') ?: "${System.getProperty('user.home')}/.cargo"
+def cargoFile = file("${cargoHome}/bin/cargo${os.windows ? '.exe' : ''}")
+def cargo = cargoFile.exists() ? cargoFile.absolutePath : 'cargo'
+
+def rustCopyTasks = rustTargets.collect { abi, target ->
+    def name = abi.replace('-', '_')
+    def linkerVariable = "CARGO_TARGET_${target.triple.toUpperCase().replace('-', '_')}_LINKER"
+    def cargoTask = tasks.register("cargoBuild_${name}", Exec) {
+        group = 'rust'
+        workingDir nativeDir
+        inputs.dir(file('../native/src'))
+        inputs.dir(file('../../src'))
+        inputs.file(file('../native/Cargo.toml'))
+        outputs.file(file("../native/target/${target.triple}/release/libdosbox_android.so"))
+        doFirst {
+            def linker = new File(android.ndkDirectory, "toolchains/llvm/prebuilt/${hostTag}/bin/${target.clang}${scriptSuffix}")
+            environment linkerVariable, linker.absolutePath
+        }
+        commandLine cargo, 'build', '--release', '--target', target.triple
+    }
+    tasks.register("copyRust_${name}", Copy) {
+        group = 'rust'
+        dependsOn cargoTask
+        from file("../native/target/${target.triple}/release/libdosbox_android.so")
+        into layout.buildDirectory.dir("rustJniLibs/${abi}")
+    }
+}
+
+def dosAssets = tasks.register('dosAssets', Copy) {
+    from(file('../../../Code')) {
+        include 'MAZE.ASM'
+    }
+    into layout.buildDirectory.dir('dosAssets/C')
+}
+
+tasks.named('preBuild') {
+    dependsOn rustCopyTasks
+    dependsOn dosAssets
+}

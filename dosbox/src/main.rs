@@ -1,22 +1,11 @@
-mod bios;
 mod config;
-mod cpu;
-mod dos;
-mod formats;
-mod hardware;
-mod linker;
-mod machine;
-mod masm;
-mod shell;
-mod terminal;
 
 use config::Parsed;
-use dos::filesystem::Drive;
-use machine::Machine;
-use shell::Shell;
+use dosbox::dos::filesystem::Drive;
+use dosbox::machine::Machine;
+use dosbox::shell::Shell;
+use dosbox::terminal::{self, headless::HeadlessTerminal, Terminal};
 use std::process::ExitCode;
-use terminal::headless::HeadlessTerminal;
-use terminal::Terminal;
 
 fn main() -> ExitCode {
     let config = match config::parse(std::env::args().skip(1)) {

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DOSBox-RS</string>
+    <string name="menu_keyboard">Keyboard</string>
+    <string name="menu_gamepad">Gamepad</string>
+    <string name="menu_import">Import files</string>
+    <string name="menu_export">Export a file</string>
+    <string name="menu_restart">Restart DOS</string>
+    <string name="export_title">Export which file?</string>
+    <string name="export_empty">Drive C: has no files yet</string>
+    <string name="imported">Imported %1$s to C:\\</string>
+    <string name="import_failed">Could not import %1$s</string>
+    <string name="exported">Exported %1$s</string>
+    <string name="export_failed">Could not export %1$s</string>
+    <string name="restarted">DOS restarted</string>
+</resources>

@@ -1,15 +1,19 @@
 ; ---------------------------------------------------------------------------
-; MAZE.ASM - 16-bit DOS random maze game, 1 player or 2 player (PvP)
+; MAZE.ASM - 16-bit DOS random maze game: you vs the computer, or 2 players
 ;
 ;   * 3 levels: 15x15, 24x24 and 36x36 grids, generated at run time
 ;   * randomised depth-first search carves a perfect maze, then extra walls
 ;     are knocked out so there is ALWAYS more than one route to the exit
-;   * 1 player : arrow keys or WASD, H toggles the shortest-path hint
-;   * 2 players: the same maze twice, side by side
-;                player 1 = left maze, W A S D
-;                player 2 = right maze, arrow keys
-;                time limit 30 / 45 / 60 seconds; first to the exit wins,
-;                at time-out the player closer to the exit wins
+;   * the same maze is shown twice, side by side, and both sides race:
+;       1 player : you (left, arrows or W A S D) against an A* bot (right)
+;       2 players: player 1 = left maze, W A S D
+;                  player 2 = right maze, arrow keys
+;   * time limit 30 / 45 / 60 seconds; first to the exit wins,
+;     at time-out the one closer to the exit wins
+;   * the bot is fair: it only knows the border, the exit position and the
+;     squares it has seen (2 / 3 / 4 squares around it by level). It plans with
+;     A* treating unseen squares as open, replans when it sees a new wall,
+;     and moves at a fixed speed. The screen shows its whole maze to you.
 ;   * after every level: optimal path in yellow, walked path in red,
 ;     squares on both in orange
 ;   * every grid square is one "pixel": the half-block character (DFh)
@@ -31,17 +35,16 @@ MAXC    equ MAXN * MAXN         ; largest number of grid squares (1296)
 NLEV    equ 3                   ; number of levels
 
 ORGY    equ 2                   ; maze origin, in pixels (text row 1)
-LEFTX   equ 2                   ; x of the left (or only) maze
-RIGHTX  equ 42                  ; x of the right maze in PvP mode
-HUDC    equ 44                  ; text column of the 1 player sidebar
+LEFTX   equ 2                   ; x of the left maze (player 1 / you)
+RIGHTX  equ 42                  ; x of the right maze (player 2 / computer)
 
 ; pixel colours (0-15; 16 background colours because blinking is turned off)
 C_FLOOR equ 0                   ; black
 C_WALL  equ 1                   ; blue
-C_HINT  equ 3                   ; cyan
 C_BOTH  equ 6                   ; orange/brown = optimal AND walked
+C_OLD   equ 8                   ; dark grey     = walked in an earlier try
 C_PLAY  equ 10                  ; bright green  = player 1
-C_PLAY2 equ 11                  ; bright cyan   = player 2
+C_PLAY2 equ 11                  ; bright cyan   = player 2 / computer
 C_TAKEN equ 12                  ; light red     = walked by the player
 C_EXIT  equ 13                  ; light magenta = exit
 C_OPT   equ 14                  ; yellow        = optimal path
@@ -61,7 +64,7 @@ A_DIM   equ 07h                 ; grey on black
 ; ---------------------------------------------------------------------------
 .data
 ; ---- game state --------------------------------------------------------
-players db 1                    ; 1 = single player, 2 = PvP
+players db 1                    ; 1 = you vs computer, 2 = PvP, 3 = study
 level   db 0                    ; 0 .. NLEV-1 (shown as 1 .. 3)
 msize   dw 0                    ; side of the current grid
 cells   dw 0                    ; msize * msize
@@ -77,7 +80,6 @@ reason  db 0                    ; 0 = reached the exit, 1 = time out
 pathlen dw 0                    ; start -> exit distance before braiding
 best    dw 0                    ; scratch: best row+column while placing exit
 extra   dw 0                    ; number of extra loops to add
-hinton  db 0                    ; 1 = hint path is shown (1 player only)
 mode    db 0                    ; 0 = playing, 1 = showing the level result
 strict  db 0                    ; 1 = checkwall only accepts shortcuts
 tries   db 0                    ; maze generation attempts
@@ -87,55 +89,138 @@ pick    dw 0                    ; scratch: which candidate wall to open
 qhead   dw 0                    ; BFS queue read index
 qtail   dw 0                    ; BFS queue write index
 dtop    dw 0                    ; DFS stack depth
-tstart  dw 0                    ; PvP: clock tick when the level started
-tlimit  dw 0                    ; PvP: ticks allowed for this level
-lastsec dw 0                    ; PvP: seconds shown on screen
+tstart  dw 0                    ; clock tick when the level started
+tlimit  dw 0                    ; ticks allowed for this level
+lastsec dw 0                    ; seconds shown on screen
+
+; ---- computer player ---------------------------------------------------
+botlast dw 0                    ; clock tick of the bot's last step
+botdly  dw 0                    ; ticks between two bot steps
+botsee  dw 0                    ; how far the bot can see (squares)
+bplen   dw 0                    ; squares left on the bot's planned path
+erow    dw 0                    ; exit row    (A* heuristic target)
+ecol    dw 0                    ; exit column
+newwall db 0                    ; 1 = botlook discovered a new wall
+rmin    dw 0                    ; botlook: rows and columns in sight
+rmax    dw 0
+cmin    dw 0
+cmax    dw 0
+curf    dw 0                    ; A*: f value of the current bucket
+curp    dw 0                    ; A*: offset of the current bucket
+curc    dw 0                    ;     number of squares in it
+nxtp    dw 0                    ; A*: offset of the f+2 bucket
+nxtc    dw 0                    ;     number of squares in it
 
 deltas  dw 4 dup(0)             ; index steps: up, down, left, right
 cand    dw 4 dup(0)             ; DFS: neighbours that may be carved
 
 sizes   db 15, 24, 36           ; grid side per level
 limits  dw 546, 819, 1092       ; 30, 45, 60 seconds at 18.2 ticks/second
+botspd  db 6, 5, 4              ; bot: clock ticks per step (3, 3.6, 4.5 /s)
+botview db 2, 3, 4              ; bot: sight radius per level
+
+; ---- cognitive study (mode 3) ------------------------------------------
+MAXTRY  equ 99                  ; safety limit on tries per stage
+stview  db 1, 1, 1              ; bot sight radius per stage in the study
+fast    db 0                    ; 1 = no delay between bot steps
+trynum  dw 0                    ; try being run on this stage (1, 2, ...)
+optlen  dw 0                    ; true optimal length (the bot never reads it)
+runner  db 0                    ; who is learning: 0 = the bot, 1 = you
+histp   dw 0                    ; offset of the runner's try history
+hist    dw MAXTRY dup(0)        ; length of every bot try on this stage
+hhist   dw MAXTRY dup(0)        ; length of every one of your tries
+srtry   db 3 dup(0)             ; bot tries needed on each stage
+srhum   db 3 dup(0)             ; your tries needed on each stage
+srwin   db 3 dup(0)             ; who learned faster: 0 bot, 1 you, 2 tie
+sropt   dw 3 dup(0)             ; optimal length of each stage
 
 numbuf  db '0000$'              ; vnum4 output buffer
 
 ; ---- text ('$' terminated) ---------------------------------------------
 msgtitl db ' RANDOM MAZE $'
-msgm1   db '1   One player$'
-msgm1a  db 'Three random mazes: 15x15, 24x24 and 36x36.$'
-msgm1b  db 'Arrow keys or W A S D to move, H shows a hint.$'
+msgm1   db '1   One player vs the computer$'
+msgm1a  db 'Race an A* bot through the same maze. You: arrows or W A S D.$'
+msgm1b  db 'The bot only sees 2 / 3 / 4 squares around it (by level) and$'
+msgm1c  db 'replans every time it finds a wall. You see its whole maze.$'
 msgm2   db '2   Two players (PvP)$'
 msgm2a  db 'Both players get the same maze, side by side.$'
 msgm2b  db 'Player 1: W A S D (left)   Player 2: arrow keys (right)$'
-msgm2c  db 'Time limit 30 / 45 / 60 seconds. First to the exit wins;$'
-msgm2d  db 'at time-out the player closer to the exit wins.$'
+msgm2c  db 'Mazes: 15x15, 24x24, 36x36. Time limit 30 / 45 / 60 seconds.$'
+msgm2d  db 'First to the exit wins; at time-out the closer one wins.$'
+msgm5   db '3   Cognitive study (the bot learns)$'
+msgm5a  db 'The bot runs one maze again and again, keeping what it has$'
+msgm5b  db 'seen, until it walks the optimal path. Then you do the same$'
+msgm5c  db 'on that maze and both learning curves are compared. 3 stages.$'
 msgm3   db 'ESC Exit to DOS$'
-msgm4   db 'Press 1 or 2$'
+msgm4   db 'Press 1, 2 or 3$'
+msgstud db ' COGNITIVE STUDY - THE BOT LEARNS ONE MAZE $'
+msgstg  db 'Stage $'
+msgsopt db 'Optimal path  $'
+msgstep db ' steps$'
+msgsee  db 'Bot sight     $'
+msgsq   db ' square(s) around it$'
+msgtry  db 'Try $'
+msgtgap db '   $'
+msghist db 'Paths walked so far:$'
+msgisop db ' OPTIMAL$'
+msgnoop db '        $'
+msgsleg db ' this try   $'
+msgsleo db ' earlier tries   $'
+msgsleb db ' bot   $'
+msgslee db ' exit$'
+msglrn  db 'Learning: every try starts again from the start, with all it has seen so far.$'
+msgnopt db 'Not optimal yet - it tries again with what it learned.                       $'
+msgftr  db ' TRY(S) $'
+msgdash4 db '----$'
+msgskey db 'SPACE = slow / fast speed    ESC = menu$'
+msgsfst db '   [ FAST ]$'
+msgsnrm db '   [ SLOW ]$'
+msgsnxt db 'ENTER = next stage       ESC = menu$'
+msgslst db 'ENTER = study results    ESC = menu$'
+msgsres db ' COGNITIVE STUDY - RESULTS $'
+msgrs1  db '   optimal $'
+msgrbt  db '   bot $'
+msgryu  db '   you $'
+msgrs3  db ' try(s)$'
+msgwyou db '   you faster$'
+msgwbot db '   bot faster$'
+msgwtie db '   tie$'
+msgov1  db 'Overall: you were faster on $'
+msgov2  db ' stage(s), the bot on $'
+msgov3  db ', ties $'
+msgrsn  db 'The bot never sees the whole maze: it learns only from what it has walked past.$'
+msgstuh db ' COGNITIVE STUDY - NOW YOU: SAME MAZE, SAME RULE $'
+msgysee db 'You see the whole maze             $'
+msgsley db ' you   $'
+msglrh  db 'Your turn: walk from the start to the exit, again until your path is optimal.$'
+msgykey db 'Arrows / W A S D = move    ESC = menu              $'
+msgbfnd db ' THE BOT FOUND THE OPTIMAL PATH AFTER $'
+msgsyou db 'ENTER = your turn on the same maze       ESC = menu$'
+msgcmph db 'Try        BOT      YOU       $'
+msgcgap db '     $'
+msgcpad db '      $'
+msgblnk db '                              $'
+msgcbot db 'BOT : optimal after $'
+msgcyou db 'YOU : optimal after $'
+msgcmid db ' try(s), $'
+msgcend db ' steps walked in total$'
+msgvyou db ' YOU LEARNED THE MAZE FASTER THAN THE BOT $'
+msgvbot db ' THE BOT LEARNED THE MAZE FASTER THAN YOU $'
+msgvtie db ' TIE - SAME TRIES AND SAME STEPS $'
 msglvl  db 'Level $'
 msgof   db ' of 3$'
 msggrid db 'Grid  $'
 msgx    db ' x $'
-msgmove db 'Moves  $'
-msgdist db 'Dist   $'
-msgdash db '----$'
-msgkey1 db 'Arrows/WASD = Move$'
-msgkey2 db 'H = Hint path$'
-msgkey3 db 'ESC = Menu$'
-msgyou  db ' You$'
-msgexit db ' Exit$'
-msghint db ' Hint$'
-msgdone db ' LEVEL COMPLETE! $'
-msgtakn db ' Your path  $'
-msgopt  db ' Optimal    $'
-msgboth db ' On both paths$'
-msgmv   db ' moves$'
-msgperf db 'You matched the optimal path!$'
-msgnext db 'ENTER = next level   ESC = menu$'
-msglast db 'ENTER = finish       ESC = menu$'
-msgwin  db 'You finished all 3 levels!$'
 msgany  db 'Press any key for the menu$'
 msgp1   db ' PLAYER 1  W A S D $'
 msgp2   db ' PLAYER 2  ARROW KEYS $'
+msgyou  db ' YOU  ARROWS / W A S D $'
+msgcpu  db ' COMPUTER BOT $'
+msgcd3  db '    3     $'
+msgcd2  db '    2     $'
+msgcd1  db '    1     $'
+msgcdgo db '  START!  $'
+msgcdno db '          $'
 msgtime db 'Time left  $'
 msgsec  db ' s$'
 msgmv2  db 'Moves $'
@@ -143,9 +228,14 @@ msgds2  db '  Dist $'
 msgscr  db 'Score   P1  $'
 msgscr2 db '  :  $'
 msgscr3 db '  P2$'
+msgscy  db 'Score   YOU  $'
+msgscc  db '  CPU$'
 msghelp db 'First to the exit wins. At time-out the closer player wins.  ESC = menu$'
+msghlpc db 'Race the bot to the exit. It sees only nearby squares.  ESC = menu$'
 msgw1   db ' PLAYER 1 WINS THE LEVEL $'
 msgw2   db ' PLAYER 2 WINS THE LEVEL $'
+msgwy   db ' YOU WIN THE LEVEL $'
+msgwc   db ' THE COMPUTER WINS THE LEVEL $'
 msgdraw db ' DRAW $'
 msgrx   db ' - reached the exit first$'
 msgrt   db ' - time up, closer to the exit$'
@@ -155,8 +245,11 @@ msglegt db ' own path   $'
 msglegb db ' both    ENTER = continue  ESC = menu$'
 msgfin  db 'FINAL SCORE$'
 msgfp1  db 'P1  $'
+msgfpy  db 'YOU  $'
 msgfw1  db ' PLAYER 1 WINS THE MATCH! $'
 msgfw2  db ' PLAYER 2 WINS THE MATCH! $'
+msgfwy  db ' YOU WIN THE MATCH! $'
+msgfwc  db ' THE COMPUTER WINS THE MATCH! $'
 msgfdr  db ' THE MATCH IS A DRAW $'
 
 ; ---- grids (only the first msize*msize entries are used) ---------------
@@ -167,6 +260,15 @@ dstart  dw MAXC dup(0)          ; BFS distance from the start
 dexit   dw MAXC dup(0)          ; BFS distance from the exit
 queue   dw MAXC dup(0)          ; BFS queue of square indices
 dstack  dw MAXC dup(0)          ; DFS stack of square indices
+known   db MAXC dup(0)          ; bot map: 0 = unseen, 1 = open, 2 = wall
+parent  dw MAXC dup(0)          ; A*: square we came from
+bpath   dw MAXC dup(0)          ; A*: planned path, exit first
+
+; the A* search runs during play, when these build-time arrays are free
+gcost   equ dstart              ; A*: steps from the bot (FFFFh = not reached)
+closed  equ mark                ; A*: 1 = already expanded
+bucket0 equ queue               ; A*: squares with f = curf ...
+bucket1 equ dstack              ; ... and with f = curf + 2
 
 ; ---------------------------------------------------------------------------
 ; code
@@ -200,7 +302,11 @@ mn_key:
     je mn_one
     cmp al,'2'
     je mn_two
-    jmp mn_key
+    cmp al,'3'
+    jne mn_key
+    mov players,3
+    call study                  ; mode 3 runs its own three stages
+    jmp menu
 mn_one:
     mov players,1
     jmp mn_play
@@ -214,14 +320,11 @@ mn_play:
 next_level:
     call setup                  ; size and step table for this level
     call buildmaze              ; random maze with several routes
-    call initlevel              ; players, trails, screen, timer
-    cmp players,1
-    jne nl_duel
-    call solo
-    jmp nl_played
-nl_duel:
-    call duel
-nl_played:
+    call initlevel              ; players, trails, screen, bot
+    call countdown              ; 3, 2, 1, START! - then the clock runs
+    or al,al
+    jnz menu                    ; ESC pressed during the countdown
+    call duel                   ; race until the exit or time-out
     or al,al
     jnz menu                    ; ESC pressed during the level
     call showresult
@@ -259,59 +362,68 @@ initscreen endp
 ; drawmenu - the mode selection screen
 ; ===========================================================================
 drawmenu proc
-    mov dh,2
+    mov dh,1
     mov dl,33
     mov si,offset msgtitl
     mov ah,A_TITLE
     call vtext
-    mov dh,6
+    mov dh,3
     mov dl,12
     mov si,offset msgm1
     mov ah,A_P1
     call vtext
-    mov dh,7
-    mov dl,16
-    mov si,offset msgm1a
     mov ah,A_DIM
-    call vtext
-    mov dh,8
-    mov dl,16
+    mov si,offset msgm1a
+    call menuline
     mov si,offset msgm1b
-    call vtext
-    mov dh,11
+    call menuline
+    mov si,offset msgm1c
+    call menuline
+    mov dh,8
     mov dl,12
     mov si,offset msgm2
     mov ah,A_P2
     call vtext
-    mov dh,12
-    mov dl,16
-    mov si,offset msgm2a
     mov ah,A_DIM
-    call vtext
-    mov dh,13
-    mov dl,16
+    mov si,offset msgm2a
+    call menuline
     mov si,offset msgm2b
-    call vtext
-    mov dh,14
-    mov dl,16
+    call menuline
     mov si,offset msgm2c
-    call vtext
-    mov dh,15
-    mov dl,16
+    call menuline
     mov si,offset msgm2d
+    call menuline
+    mov dh,14
+    mov dl,12
+    mov si,offset msgm5
+    mov ah,A_TITLE
     call vtext
-    mov dh,18
+    mov ah,A_DIM
+    mov si,offset msgm5a
+    call menuline
+    mov si,offset msgm5b
+    call menuline
+    mov si,offset msgm5c
+    call menuline
+    mov dh,20
     mov dl,12
     mov si,offset msgm3
     mov ah,A_MSG
     call vtext
-    mov dh,21
-    mov dl,34
+    mov dh,22
+    mov dl,33
     mov si,offset msgm4
     mov ah,A_HUD
     call vtext
     ret
 drawmenu endp
+
+menuline proc                   ; next row, column 16: text SI, attribute AH
+    inc dh
+    mov dl,16
+    call vtext
+    ret
+menuline endp
 
 ; ===========================================================================
 ; setup - load the size and neighbour steps of the current level
@@ -344,6 +456,7 @@ setup endp
 
 ; ===========================================================================
 ; initlevel - reset players and trails, draw the level, start the clock
+;             and, against the computer, wake up the bot
 ; ===========================================================================
 initlevel proc
     mov ax,spos
@@ -351,7 +464,6 @@ initlevel proc
     mov ppos[2],ax
     mov steps[0],0
     mov steps[2],0
-    mov hinton,0
     mov mode,0
     mov who,0
     mov di,offset trail
@@ -361,59 +473,108 @@ initlevel proc
     mov bx,spos
     mov trail[bx],1             ; ... except the start square
     mov trail[bx+MAXC],1
+    cmp players,1
+    jne il_draw
+    call botinit                ; the bot's map: border and exit only
+il_draw:
     call cls
     call drawmazes
-    cmp players,1
-    jne il_duel
-    call drawhud
-    ret
-il_duel:
     call drawhud2
-    xor ah,ah
-    int 1Ah
-    mov tstart,dx               ; the PvP clock starts now
+    cmp players,1
+    jne il_done
+    call botlook                ; first look around the start ...
+    call botplan                ; ... and first plan
+il_done:
     mov lastsec,0FFFFh
     ret
 initlevel endp
 
 ; ===========================================================================
-; solo - 1 player input loop
-;        OUT: AL = 0 level finished, AL = 1 ESC
+; countdown - show 3, 2, 1, START! (one second each) between the level
+;             info and the clock, then start the clock and the bot.
+;             Keys pressed meanwhile are thrown away.
+;             OUT: AL = 1 if ESC was pressed (back to the menu)
 ; ===========================================================================
-solo proc
-so_key:
-    mov ah,0
-    int 16h                     ; AH = scan code, AL = character
-    cmp al,27
-    je so_esc
-    mov who,0
-    call keydir                 ; any movement key moves the player
-    jc so_move
-    or al,20h
-    cmp al,'h'
-    jne so_key
-    xor hinton,1                ; toggle the hint
-    cmp hinton,0
-    je so_off
-    call refreshhint
-    jmp so_hud
-so_off:
-    call drawall
-so_hud:
-    call updhud
-    jmp so_key
-so_move:
-    call trymove
-    jnc so_key
+countdown proc
+    mov si,offset msgcd3
+    mov ah,A_TITLE
+    mov cx,18                   ; 18 ticks = one second
+    call cdstep
+    jc cd_esc
+    mov si,offset msgcd2
+    call cdstep
+    jc cd_esc
+    mov si,offset msgcd1
+    call cdstep
+    jc cd_esc
+    mov si,offset msgcdgo
+    mov ah,A_WIN
+    mov cx,9                    ; START! stays up for half a second
+    call cdstep
+    jc cd_esc
+    mov si,offset msgcdno
+    mov ah,A_DIM
+    mov dh,19
+    mov dl,24
+    call vtext                  ; clear the countdown
+    xor ah,ah
+    int 1Ah
+    mov tstart,dx               ; the clock starts now ...
+    mov botlast,dx              ; ... and so does the bot
     xor al,al
     ret
-so_esc:
+cd_esc:
     mov al,1
     ret
-solo endp
+countdown endp
 
 ; ===========================================================================
-; duel - 2 player input loop with time limit
+; cdstep - show text SI (attribute AH) at row 19, column 24 and wait CX
+;          clock ticks, throwing keys away. OUT: CF = 1 if ESC was pressed
+; ===========================================================================
+cdstep proc
+    push ax
+    push bx
+    push dx
+    mov dh,19
+    mov dl,24
+    call vtext
+    xor ah,ah
+    int 1Ah
+    mov bx,dx                   ; BX = tick when this step started
+cd_loop:
+    mov ah,01h
+    int 16h                     ; any key waiting?
+    jz cd_idle
+    mov ah,0
+    int 16h                     ; take it out of the buffer
+    cmp al,27
+    je cd_quit
+    jmp cd_loop
+cd_idle:
+    xor ah,ah
+    int 1Ah
+    mov ax,dx
+    sub ax,bx
+    cmp ax,cx
+    jae cd_done
+    sti
+    hlt                         ; sleep until the next interrupt
+    jmp cd_loop
+cd_done:
+    clc
+    jmp cd_out
+cd_quit:
+    stc
+cd_out:
+    pop dx
+    pop bx
+    pop ax
+    ret
+cdstep endp
+
+; ===========================================================================
+; duel - race loop with time limit (player vs player or player vs bot)
 ;        OUT: AL = 0 level finished (winner, reason set), AL = 1 ESC
 ; ===========================================================================
 duel proc
@@ -421,9 +582,16 @@ du_loop:
     call timeleft               ; AX = seconds left, CF = 1 time is up
     jc du_timeout
     cmp ax,lastsec
-    je du_poll
+    je du_bot
     mov lastsec,ax
     call showtime
+du_bot:
+    cmp players,1
+    jne du_poll
+    call botturn                ; CF = 1 when the bot reached the exit
+    jnc du_poll
+    mov who,1
+    jmp du_won
 du_poll:
     mov ah,01h
     int 16h                     ; ZF = 0 when a key is waiting
@@ -438,9 +606,14 @@ du_key:
     je du_esc
     call keydir                 ; DL = player who owns the key
     jnc du_loop
+    cmp players,1
+    jne du_owner
+    xor dl,dl                   ; against the bot every movement key is yours
+du_owner:
     mov who,dl
     call trymove
     jnc du_loop
+du_won:
     mov al,who                  ; this player reached the exit first
     mov winner,al
     mov reason,0
@@ -534,9 +707,30 @@ trymove proc
     add ax,deltas[bx]           ; AX = square we want to step into
     mov si,ax
     cmp grid[si],1
-    jne tm_no                   ; wall: ignore the key
+    je tm_go
+    clc                         ; wall: ignore the key
+    ret
+tm_go:
+    call applymove
+    ret
+trymove endp
+
+; ===========================================================================
+; applymove - put player 'who' on open square AX
+;             OUT: CF = 1 when that square is the exit
+; ===========================================================================
+applymove proc
+    push bx
+    push dx
+    push si
+    push di
+    mov si,ax                   ; SI = new square
+    mov al,who
+    xor ah,ah
+    shl ax,1
+    mov di,ax                   ; DI = who * 2
     mov dx,ppos[di]             ; DX = square being left
-    mov ppos[di],ax
+    mov ppos[di],si
     inc steps[di]
     call tbase
     mov trail[bx+si],1          ; remember the walked path
@@ -544,21 +738,392 @@ trymove proc
     call drawcell               ; repaint the old square
     mov ax,si
     call drawcell               ; draw the player on the new one
-    cmp hinton,0
-    je tm_hud
-    call refreshhint            ; the shortest path starts somewhere new
-tm_hud:
-    push si
     call updstats
-    pop si
     cmp si,epos
-    jne tm_no
-    stc
-    ret
-tm_no:
+    je am_exit
     clc
+    jmp am_out
+am_exit:
+    stc
+am_out:
+    pop di
+    pop si
+    pop dx
+    pop bx
     ret
-trymove endp
+applymove endp
+
+; ===========================================================================
+; the computer player
+;
+; botinit - the bot knows only the border and where the exit is
+; botturn - called from the race loop: one step every botdly clock ticks
+;           OUT: CF = 1 when the bot reached the exit
+; botstep - take the next square of the plan, look around, and replan if a
+;           new wall came into sight
+; ===========================================================================
+botinit proc
+    mov di,offset known
+    mov cx,cells
+    xor al,al
+    call memfill                ; nothing seen yet
+    xor bx,bx
+bi_loop:
+    cmp bx,cells
+    jae bi_done
+    mov ax,bx
+    xor dx,dx
+    div msize                   ; AX = row, DX = column
+    mov cx,msize
+    dec cx
+    or ax,ax
+    jz bi_wall
+    cmp ax,cx
+    je bi_wall
+    or dx,dx
+    jz bi_wall
+    cmp dx,cx
+    jne bi_next
+bi_wall:
+    mov known[bx],2             ; the frame of the maze is visible to all
+bi_next:
+    inc bx
+    jmp bi_loop
+bi_done:
+    mov ax,epos
+    xor dx,dx
+    div msize
+    mov erow,ax                 ; the exit is visible to all as well
+    mov ecol,dx
+    mov bl,level
+    xor bh,bh
+    mov al,botspd[bx]
+    xor ah,ah
+    mov botdly,ax
+    mov al,botview[bx]
+    mov botsee,ax
+    mov bplen,0
+    ret
+botinit endp
+
+botturn proc
+    push ax
+    push dx
+    xor ah,ah
+    int 1Ah                     ; DX = low word of the tick count
+    mov ax,dx
+    sub ax,botlast
+    cmp ax,botdly
+    jb bt_wait
+    mov botlast,dx
+    call botstep
+    jmp bt_out
+bt_wait:
+    clc
+bt_out:
+    pop dx
+    pop ax
+    ret
+botturn endp
+
+botstep proc
+    push bx
+    push si
+    cmp bplen,0
+    jne bs_go
+    call botplan                ; no plan yet (or the last one failed)
+    cmp bplen,0
+    jne bs_go
+    clc
+    jmp bs_out
+bs_go:
+    dec bplen
+    mov bx,bplen
+    shl bx,1
+    mov ax,bpath[bx]            ; next square on the plan
+    mov si,ax
+    cmp grid[si],1
+    je bs_move
+    mov bplen,0                 ; the plan ran into a wall: plan again later
+    clc
+    jmp bs_out
+bs_move:
+    mov bl,who
+    push bx
+    mov who,1
+    call applymove
+    pushf
+    call botlook                ; what can the bot see from here?
+    cmp newwall,0
+    je bs_keep
+    call botplan                ; a new wall: find a new shortest path
+bs_keep:
+    popf
+    pop bx
+    mov who,bl
+bs_out:
+    pop si
+    pop bx
+    ret
+botstep endp
+
+; ===========================================================================
+; botlook - add every square within botsee rows/columns of the bot to the
+;           bot's own map (the screen always shows the whole maze)
+;           OUT: newwall = 1 if a wall appeared
+; ===========================================================================
+botlook proc
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    mov newwall,0
+    mov ax,ppos[2]
+    xor dx,dx
+    div msize                   ; AX = bot row, DX = bot column
+    mov si,msize
+    dec si                      ; SI = last row / column
+    mov cx,ax
+    sub cx,botsee
+    jnc bl_r0
+    xor cx,cx
+bl_r0:
+    mov rmin,cx
+    mov cx,ax
+    add cx,botsee
+    cmp cx,si
+    jbe bl_r1
+    mov cx,si
+bl_r1:
+    mov rmax,cx
+    mov cx,dx
+    sub cx,botsee
+    jnc bl_c0
+    xor cx,cx
+bl_c0:
+    mov cmin,cx
+    mov cx,dx
+    add cx,botsee
+    cmp cx,si
+    jbe bl_c1
+    mov cx,si
+bl_c1:
+    mov cmax,cx
+    mov cx,rmin                 ; CX = row being scanned
+bl_row:
+    cmp cx,rmax
+    ja bl_done
+    mov ax,cx
+    mul msize
+    add ax,cmin
+    mov bx,ax                   ; BX = first square of this row in sight
+    mov si,cmin                 ; SI = column being scanned
+bl_col:
+    cmp si,cmax
+    ja bl_next
+    cmp known[bx],0
+    jne bl_skip
+    mov known[bx],1
+    cmp grid[bx],0
+    jne bl_skip
+    mov known[bx],2
+    mov newwall,1
+bl_skip:
+    inc bx
+    inc si
+    jmp bl_col
+bl_next:
+    inc cx
+    jmp bl_row
+bl_done:
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+botlook endp
+
+; ===========================================================================
+; botplan - A* from the bot to the exit over the bot's own map
+;           (unseen squares are assumed open, known walls are avoided)
+;   g = steps from the bot, h = |row - exit row| + |column - exit column|.
+;   Every step costs 1 and changes h by exactly 1, so f = g + h of a new
+;   square is either the current f or f + 2. Two buckets are therefore
+;   enough for the open list: 'current' (f) and 'next' (f + 2).
+;   OUT: bpath[0 .. bplen-1] = path from the exit back to the bot
+; ===========================================================================
+botplan proc
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    mov bplen,0
+    mov bx,offset gcost
+    mov cx,cells
+bp_fill:
+    mov word ptr [bx],0FFFFh
+    add bx,2
+    loop bp_fill
+    mov di,offset closed
+    mov cx,cells
+    xor al,al
+    call memfill
+    mov curp,offset bucket0
+    mov nxtp,offset bucket1
+    mov curc,0
+    mov nxtc,0
+    mov ax,ppos[2]              ; start the search at the bot
+    mov bx,ax
+    shl bx,1
+    mov gcost[bx],0
+    push ax
+    call hcost
+    mov curf,ax                 ; f(bot) = h(bot)
+    pop ax
+    call pushcur
+bp_loop:
+    cmp curc,0
+    jne bp_pop
+    cmp nxtc,0
+    jne bp_swap
+    jmp bp_done                 ; open list empty: no path known
+bp_swap:
+    mov ax,curp                 ; move on to the f + 2 bucket
+    xchg ax,nxtp
+    mov curp,ax
+    mov ax,nxtc
+    mov curc,ax
+    mov nxtc,0
+    add curf,2
+bp_pop:
+    dec curc
+    mov bx,curp
+    mov si,curc
+    shl si,1
+    mov ax,[bx+si]              ; AX = square to expand
+    mov si,ax
+    cmp closed[si],0
+    jne bp_loop                 ; already expanded through a shorter way
+    mov closed[si],1
+    cmp ax,epos
+    je bp_found
+    mov bx,ax
+    shl bx,1
+    mov dx,gcost[bx]
+    inc dx                      ; DX = g of every neighbour
+    xor cx,cx
+bp_dir:
+    mov bx,cx
+    mov si,ax
+    add si,deltas[bx]           ; SI = neighbour
+    cmp known[si],2
+    je bp_next                  ; a wall the bot has seen
+    cmp closed[si],0
+    jne bp_next
+    mov bx,si
+    shl bx,1
+    cmp dx,gcost[bx]
+    jae bp_next                 ; not shorter than what we had
+    mov gcost[bx],dx
+    mov parent[bx],ax
+    push ax
+    mov ax,si
+    call hcost
+    add ax,dx                   ; AX = f of the neighbour
+    cmp ax,curf
+    mov ax,si
+    je bp_same
+    call pushnext
+    jmp bp_pushed
+bp_same:
+    call pushcur
+bp_pushed:
+    pop ax
+bp_next:
+    add cx,2
+    cmp cx,8
+    jb bp_dir
+    jmp bp_loop
+bp_found:
+    mov ax,epos                 ; follow the parents back to the bot
+    xor di,di
+bp_back:
+    cmp ax,ppos[2]
+    je bp_done
+    mov bpath[di],ax
+    add di,2
+    inc bplen
+    mov bx,ax
+    shl bx,1
+    mov ax,parent[bx]
+    jmp bp_back
+bp_done:
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+botplan endp
+
+; ===========================================================================
+; hcost    - AX = Manhattan distance from square AX to the exit
+; pushcur  - add square AX to the current A* bucket
+; pushnext - add square AX to the f + 2 A* bucket
+; ===========================================================================
+hcost proc
+    push dx
+    xor dx,dx
+    div msize                   ; AX = row, DX = column
+    sub ax,erow
+    jns hc_row
+    neg ax
+hc_row:
+    sub dx,ecol
+    jns hc_col
+    neg dx
+hc_col:
+    add ax,dx
+    pop dx
+    ret
+hcost endp
+
+pushcur proc
+    push bx
+    push si
+    mov si,curc
+    cmp si,MAXC
+    jae pc_full
+    mov bx,curp
+    shl si,1
+    mov [bx+si],ax
+    inc curc
+pc_full:
+    pop si
+    pop bx
+    ret
+pushcur endp
+
+pushnext proc
+    push bx
+    push si
+    mov si,nxtc
+    cmp si,MAXC
+    jae pn_full
+    mov bx,nxtp
+    shl si,1
+    mov [bx+si],ax
+    inc nxtc
+pn_full:
+    pop si
+    pop bx
+    ret
+pushnext endp
 
 ; ===========================================================================
 ; tbase - BX = offset of player 'who' inside trail[]
@@ -1116,13 +1681,6 @@ tp_done:
     ret
 tracepath endp
 
-refreshhint proc
-    mov ax,ppos[0]
-    call tracepath
-    call drawall
-    ret
-refreshhint endp
-
 ; ===========================================================================
 ; random - IN: AX = n      OUT: AX = random number 0 .. n-1
 ;          16-bit linear congruential generator, high part of seed * n
@@ -1224,6 +1782,10 @@ cellcolour proc
     xor ah,ah
     shl ax,1
     mov di,ax                   ; DI = who * 2
+    cmp players,3
+    jne cc_race
+    jmp cc_study
+cc_race:
     cmp mode,0
     jne cc_result
     cmp si,ppos[di]
@@ -1232,12 +1794,7 @@ cellcolour proc
     je cc_exit
     cmp grid[si],0
     je cc_wall
-    cmp hinton,0
-    je cc_floor
-    test mark[si],1
-    jz cc_floor
-    mov bl,C_HINT
-    jmp cc_out
+    jmp cc_floor
 cc_result:
     cmp si,epos
     je cc_exit
@@ -1289,6 +1846,34 @@ cc_out:
     pop di
     pop ax
     ret
+cc_study:                       ; mode 3: this try red, earlier tries grey
+    cmp si,epos
+    je cc_exit
+    cmp grid[si],0
+    je cc_wall
+    cmp mode,0
+    jne cs_found
+    cmp si,ppos[2]
+    je cs_runner
+    cmp trail[si+MAXC],0
+    jne cc_taken
+cs_old:
+    cmp trail[si],0
+    je cc_floor
+    mov bl,C_OLD
+    jmp cc_out
+cs_found:                       ; the optimal try in yellow
+    cmp trail[si+MAXC],0
+    je cs_old
+    mov bl,C_OPT
+    jmp cc_out
+cs_runner:                      ; cyan bot or green you
+    mov bl,C_PLAY2
+    cmp runner,0
+    je cs_done
+    mov bl,C_PLAY
+cs_done:
+    jmp cc_out
 cellcolour endp
 
 ; ===========================================================================
@@ -1338,12 +1923,9 @@ drawall endp
 drawmazes proc
     mov who,0
     call drawall
-    cmp players,2
-    jne dz_done
     mov who,1
     call drawall
     mov who,0
-dz_done:
     ret
 drawmazes endp
 
@@ -1475,99 +2057,9 @@ levelinfo proc
 levelinfo endp
 
 ; ===========================================================================
-; drawhud - 1 player title line and sidebar
-; updhud  - refresh the move counter and the hint distance
-; updstats- refresh the numbers of player 'who' (either mode)
+; updstats - refresh the moves and exit distance of player 'who'
 ; ===========================================================================
-drawhud proc
-    mov dh,0
-    mov dl,LEFTX
-    mov si,offset msgtitl
-    mov ah,A_TITLE
-    call vtext
-    mov dh,2
-    mov dl,HUDC
-    call levelinfo
-
-    mov dh,5
-    mov dl,HUDC
-    mov si,offset msgmove
-    call vtext
-    mov dh,6
-    mov dl,HUDC
-    mov si,offset msgdist
-    call vtext
-
-    mov dh,8
-    mov dl,HUDC
-    mov si,offset msgkey1
-    call vtext
-    mov dh,9
-    mov dl,HUDC
-    mov si,offset msgkey2
-    call vtext
-    mov dh,10
-    mov dl,HUDC
-    mov si,offset msgkey3
-    call vtext
-
-    mov dh,12
-    mov dl,HUDC
-    mov al,0DBh                 ; full block as a colour swatch
-    mov ah,C_PLAY
-    call vchar
-    mov si,offset msgyou
-    mov ah,A_HUD
-    call vtext
-    mov dh,13
-    mov dl,HUDC
-    mov al,0DBh
-    mov ah,C_EXIT
-    call vchar
-    mov si,offset msgexit
-    mov ah,A_HUD
-    call vtext
-    mov dh,14
-    mov dl,HUDC
-    mov al,0DBh
-    mov ah,C_HINT
-    call vchar
-    mov si,offset msghint
-    mov ah,A_HUD
-    call vtext
-    call updhud
-    ret
-drawhud endp
-
-updhud proc
-    mov dh,5
-    mov dl,HUDC+7
-    mov ax,steps[0]
-    mov bl,A_HUD
-    call vnum4
-    mov dh,6
-    mov dl,HUDC+7
-    cmp hinton,0
-    je uh_dash
-    mov bx,ppos[0]
-    shl bx,1
-    mov ax,dexit[bx]            ; squares left to the exit
-    mov bl,A_HUD
-    call vnum4
-    ret
-uh_dash:
-    mov si,offset msgdash
-    mov ah,A_HUD
-    call vtext
-    ret
-updhud endp
-
 updstats proc
-    cmp players,1
-    jne us_duel
-    call updhud
-    ret
-us_duel:
     push ax
     push bx
     push dx
@@ -1602,9 +2094,9 @@ us_duel:
 updstats endp
 
 ; ===========================================================================
-; drawhud2 - PvP labels and bottom panel
+; drawhud2 - labels and bottom panel
 ;   row 0  : player names over each maze
-;   row 20 : level, grid size, time left
+;   row 19 : level and time left        row 20 : grid size
 ;   row 21 : moves and distance of each player
 ;   row 22 : match score
 ;   row 23 : rules / level winner
@@ -1614,11 +2106,19 @@ drawhud2 proc
     mov dl,LEFTX
     mov si,offset msgp1
     mov ah,A_P1
+    cmp players,1
+    jne dh_left
+    mov si,offset msgyou
+dh_left:
     call vtext
     mov dh,0
     mov dl,RIGHTX
     mov si,offset msgp2
     mov ah,A_P2
+    cmp players,1
+    jne dh_right
+    mov si,offset msgcpu
+dh_right:
     call vtext
     mov dh,19
     mov dl,LEFTX
@@ -1632,6 +2132,10 @@ drawhud2 proc
     mov dh,23
     mov dl,LEFTX
     mov si,offset msghelp
+    cmp players,1
+    jne dh_help
+    mov si,offset msghlpc
+dh_help:
     mov ah,A_DIM
     call vtext
     ret
@@ -1667,6 +2171,10 @@ showscore proc
     mov dh,22
     mov dl,LEFTX
     mov si,offset msgscr
+    cmp players,1
+    jne ss_left
+    mov si,offset msgscy
+ss_left:
     mov ah,A_MSG
     call vtext
     mov al,score[0]
@@ -1679,6 +2187,10 @@ showscore proc
     mov ah,A_P2
     call vnum2
     mov si,offset msgscr3
+    cmp players,1
+    jne ss_right
+    mov si,offset msgscc
+ss_right:
     mov ah,A_MSG
     call vtext
     ret
@@ -1693,11 +2205,6 @@ showresult proc
     call tracepath              ; mark[] = a shortest start -> exit path
     mov mode,1
     call drawmazes
-    cmp players,1
-    jne sr_duel
-    call result1
-    jmp sr_wait
-sr_duel:
     call result2
 sr_wait:
     mov ah,0
@@ -1714,86 +2221,7 @@ sr_esc:
 showresult endp
 
 ; ===========================================================================
-; result1 - 1 player sidebar after a level: legend and move counts
-; ===========================================================================
-result1 proc
-    mov dh,16
-    mov dl,HUDC
-    mov si,offset msgdone
-    mov ah,A_WIN
-    call vtext
-
-    mov dh,18
-    mov dl,HUDC
-    mov al,0DBh
-    mov ah,C_TAKEN
-    call vchar
-    mov si,offset msgtakn
-    mov ah,A_MSG
-    call vtext
-    mov ax,steps[0]
-    mov bl,A_MSG
-    call vnum4
-    mov si,offset msgmv
-    mov ah,A_MSG
-    call vtext
-
-    mov dh,19
-    mov dl,HUDC
-    mov al,0DBh
-    mov ah,C_OPT
-    call vchar
-    mov si,offset msgopt
-    mov ah,A_MSG
-    call vtext
-    mov bx,spos
-    shl bx,1
-    mov ax,dexit[bx]            ; length of the optimal path
-    mov bl,A_MSG
-    call vnum4
-    mov si,offset msgmv
-    mov ah,A_MSG
-    call vtext
-
-    mov dh,20
-    mov dl,HUDC
-    mov al,0DBh
-    mov ah,C_BOTH
-    call vchar
-    mov si,offset msgboth
-    mov ah,A_MSG
-    call vtext
-
-    mov bx,spos
-    shl bx,1
-    mov ax,dexit[bx]
-    cmp ax,steps[0]
-    jne r1_keys
-    mov dh,22
-    mov dl,HUDC
-    mov si,offset msgperf
-    mov ah,A_WIN
-    call vtext
-r1_keys:
-    mov dh,23
-    mov dl,HUDC
-    call keyline
-    ret
-result1 endp
-
-keyline proc                    ; 'ENTER = next level' or 'ENTER = finish'
-    mov si,offset msgnext
-    cmp level,NLEV-1
-    jb kl_show
-    mov si,offset msglast
-kl_show:
-    mov ah,A_HUD
-    call vtext
-    ret
-keyline endp
-
-; ===========================================================================
-; result2 - PvP: score the level, show the winner, reason and legend
+; result2 - score the level, show the winner, reason and legend
 ; ===========================================================================
 result2 proc
     mov dh,23                   ; clear the rules line
@@ -1809,11 +2237,21 @@ result2 proc
     je r2_name
     xor bh,bh
     inc score[bx]               ; the level winner scores a point
+    cmp players,1
+    je r2_bot
     mov si,offset msgw1
     mov ah,A_WIN
     or bl,bl
     jz r2_name
     mov si,offset msgw2
+    jmp r2_name
+r2_bot:
+    mov si,offset msgwy
+    mov ah,A_WIN
+    or bl,bl
+    jz r2_name
+    mov si,offset msgwc
+    mov ah,A_LOSE
 r2_name:
     call vtext
     mov si,offset msgrx         ; why: exit / closer / equal
@@ -1872,23 +2310,18 @@ clrrow endp
 ; ===========================================================================
 finalscreen proc
     call cls
-    cmp players,1
-    jne fs_duel
-    mov dh,11
-    mov dl,27
-    mov si,offset msgwin
-    mov ah,A_WIN
-    call vtext
-    jmp fs_wait
-fs_duel:
     mov dh,9
     mov dl,34
     mov si,offset msgfin
     mov ah,A_MSG
     call vtext
-    mov dh,11                   ; 'P1  nn  :  nn  P2'
+    mov dh,11                   ; 'P1  nn  :  nn  P2' / 'YOU  nn  :  nn  CPU'
     mov dl,32
     mov si,offset msgfp1
+    cmp players,1
+    jne fs_left
+    mov si,offset msgfpy
+fs_left:
     mov ah,A_P1
     call vtext
     mov al,score[0]
@@ -1900,6 +2333,10 @@ fs_duel:
     mov ah,A_P2
     call vnum2
     mov si,offset msgscr3
+    cmp players,1
+    jne fs_right
+    mov si,offset msgscc
+fs_right:
     call vtext
     mov dh,13
     mov dl,27
@@ -1908,13 +2345,22 @@ fs_duel:
     mov al,score[0]
     cmp al,score[1]
     je fs_show
-    mov si,offset msgfw1
+    ja fs_first
+    mov si,offset msgfw2        ; the right-hand side won
     mov ah,A_WIN
-    ja fs_show
-    mov si,offset msgfw2
+    cmp players,1
+    jne fs_show
+    mov si,offset msgfwc
+    mov ah,A_LOSE
+    jmp fs_show
+fs_first:
+    mov si,offset msgfw1        ; the left-hand side won
+    mov ah,A_WIN
+    cmp players,1
+    jne fs_show
+    mov si,offset msgfwy
 fs_show:
     call vtext
-fs_wait:
     mov dh,15
     mov dl,27
     mov si,offset msgany
@@ -1924,5 +2370,863 @@ fs_wait:
     int 16h
     ret
 finalscreen endp
+
+; ===========================================================================
+; study - mode 3, cognitive study. On each stage the bot first runs the
+;   same maze again and again from the start, keeping its own map (known[])
+;   between tries, until one try is exactly as long as the optimal path.
+;   Then it is your turn on the same maze with the same rule, and the two
+;   learning curves are compared.
+;   Why the bot always gets there: if a try discovers no new wall, the bot
+;   walked its first plan - a shortest path on a map where unseen squares
+;   count as open, which is never longer than the true shortest path - so
+;   that try was optimal. Every other try uncovers at least one new wall,
+;   and there are only so many walls.
+; ===========================================================================
+study proc
+    mov orgx[1],LEFTX           ; one maze only, drawn on the left
+    mov fast,1                  ; full speed unless SPACE slows it down
+    mov level,0
+sy_stage:
+    call setup
+    call buildmaze
+    call botinit                ; a new maze: the bot knows nothing yet
+    mov bl,level
+    xor bh,bh
+    mov al,stview[bx]
+    xor ah,ah
+    mov botsee,ax
+    mov bx,spos
+    shl bx,1
+    mov ax,dexit[bx]
+    mov optlen,ax               ; for the referee only
+    mov runner,0                ; first the bot ...
+    mov histp,offset hist
+    call learn
+    or al,al
+    jnz sy_quit
+    mov bl,level
+    xor bh,bh
+    mov al,byte ptr trynum
+    mov srtry[bx],al
+    shl bx,1
+    mov ax,optlen
+    mov sropt[bx],ax
+    call studydone
+    call studyenter
+    jc sy_quit
+    mov runner,1                ; ... then you, on the same maze
+    mov histp,offset hhist
+    call learn
+    or al,al
+    jnz sy_quit
+    mov bl,level
+    xor bh,bh
+    mov al,byte ptr trynum
+    mov srhum[bx],al
+    call studycmp
+    call studyenter
+    jc sy_quit
+    inc level
+    cmp level,NLEV
+    jae sy_end
+    jmp sy_stage
+sy_end:
+    call studyfinal
+sy_quit:
+    mov orgx[1],RIGHTX
+    ret
+study endp
+
+studyenter proc                 ; wait for ENTER (CF = 0) or ESC (CF = 1)
+se_key:
+    mov ah,0
+    int 16h
+    cmp al,27
+    je se_esc
+    cmp al,13
+    jne se_key
+    clc
+    ret
+se_esc:
+    stc
+    ret
+studyenter endp
+
+; ===========================================================================
+; learn - the runner (0 = bot, 1 = you) walks the current maze from the
+;         start again and again until one try is as long as the optimal
+;         path. Every try is stored in the runner's history (histp).
+;         OUT: AL = 1 if ESC was pressed
+; ===========================================================================
+learn proc
+    mov di,offset trail
+    mov cx,2 * MAXC
+    xor al,al
+    call memfill                ; no paths walked yet
+    mov trynum,0
+lr_try:
+    inc trynum
+    call newtry
+    call studyhud
+lr_step:
+    cmp runner,0
+    jne lr_you
+    mov cx,1                    ; the bot: one step per clock tick (or none)
+    call studywait
+    or al,al
+    jnz lr_esc
+    call botstep                ; CF = 1 when the exit is reached
+    jmp lr_moved
+lr_you:
+    mov ah,0
+    int 16h                     ; your move
+    cmp al,27
+    je lr_esc
+    call keydir                 ; arrows and W A S D both move you
+    jnc lr_step
+    mov who,1
+    call trymove
+lr_moved:
+    pushf
+    call studycur
+    popf
+    jnc lr_step
+    call endtry
+    mov ax,steps[2]
+    cmp ax,optlen
+    je lr_done
+    cmp trynum,MAXTRY
+    jae lr_done
+    mov dh,22
+    mov dl,LEFTX
+    mov si,offset msgnopt
+    mov ah,A_MSG
+    call vtext
+    mov cx,27                   ; show the result for a moment
+    call studywait
+    or al,al
+    jnz lr_esc
+    jmp lr_try
+lr_done:
+    mov mode,1
+    mov who,1
+    call drawall                ; the optimal try in yellow
+    xor al,al
+    ret
+lr_esc:
+    mov al,1
+    ret
+learn endp
+
+; ===========================================================================
+; newtry - back to the start for the next try. The bot keeps its map, so
+;          its first plan already uses everything seen in earlier tries.
+; ===========================================================================
+newtry proc
+    mov ax,spos
+    mov ppos[2],ax
+    mov steps[2],0
+    mov bplen,0
+    mov mode,0
+    mov who,1
+    mov di,offset trail + MAXC
+    mov cx,MAXC
+    xor al,al
+    call memfill                ; this try has walked nothing yet
+    mov bx,spos
+    mov trail[bx+MAXC],1
+    call cls
+    call drawall
+    cmp runner,0
+    jne nt_done
+    call botlook                ; look around the start ...
+    call botplan                ; ... and plan with all it knows
+nt_done:
+    ret
+newtry endp
+
+; ===========================================================================
+; endtry - store the length of the try and add its squares to the paths of
+;          the earlier tries (shown in grey)
+; ===========================================================================
+endtry proc
+    mov bx,trynum
+    dec bx
+    cmp bx,MAXTRY
+    jae et_merge
+    shl bx,1
+    mov si,histp
+    mov ax,steps[2]
+    mov [bx+si],ax
+et_merge:
+    xor bx,bx
+et_loop:
+    cmp bx,cells
+    jae et_done
+    cmp trail[bx+MAXC],0
+    je et_next
+    mov trail[bx],1
+et_next:
+    inc bx
+    jmp et_loop
+et_done:
+    mov ax,trynum
+    call studyhist
+    ret
+endtry endp
+
+; ===========================================================================
+; studywait - wait CX clock ticks. In fast mode a step does not wait at all
+;             and a longer pause is cut to half a second.
+;             SPACE toggles fast mode. OUT: AL = 1 if ESC was pressed
+; ===========================================================================
+studywait proc
+    push bx
+    push cx
+    push dx
+    cmp fast,0
+    je sw_start
+    cmp cx,1
+    ja sw_pause
+    xor cx,cx                   ; a step: no delay
+    jmp sw_start
+sw_pause:
+    mov cx,9                    ; between tries: half a second
+sw_start:
+    xor ah,ah
+    int 1Ah
+    mov bx,dx                   ; BX = tick when the wait started
+sw_loop:
+    mov ah,01h
+    int 16h                     ; any key waiting?
+    jz sw_time
+    mov ah,0
+    int 16h
+    cmp al,27
+    je sw_esc
+    cmp al,' '
+    jne sw_loop
+    cmp runner,0
+    jne sw_loop                 ; SPACE only changes the bot's speed
+    xor fast,1
+    call studykeys
+    cmp fast,0
+    je sw_loop
+    cmp cx,1
+    ja sw_loop
+    xor cx,cx                   ; fast mode: stop waiting now
+    jmp sw_loop
+sw_time:
+    jcxz sw_go
+    xor ah,ah
+    int 1Ah
+    mov ax,dx
+    sub ax,bx
+    cmp ax,cx
+    jae sw_go
+    sti
+    hlt                         ; sleep until the next interrupt
+    jmp sw_loop
+sw_go:
+    xor al,al
+    jmp sw_out
+sw_esc:
+    mov al,1
+sw_out:
+    pop dx
+    pop cx
+    pop bx
+    ret
+studywait endp
+
+; ===========================================================================
+; study screen
+;   left : the maze (rows 1-18), legend (row 20), moves (row 21),
+;          status (row 22), keys (row 23), ENTER prompt (row 24)
+;   right: stage, grid, optimal length, sight (rows 2-6),
+;          current try (row 8), history of tries (rows 10-18)
+; ===========================================================================
+studyhud proc
+    mov dh,0
+    mov dl,LEFTX
+    mov si,offset msgstud
+    cmp runner,0
+    je sh_title
+    mov si,offset msgstuh
+sh_title:
+    mov ah,A_TITLE
+    call vtext
+    mov dh,2
+    mov dl,RIGHTX
+    mov si,offset msgstg
+    mov ah,A_HUD
+    call vtext
+    mov al,level
+    add al,'1'
+    call vchar
+    mov si,offset msgof
+    call vtext
+    mov dh,3
+    mov dl,RIGHTX
+    mov si,offset msggrid
+    call vtext
+    mov al,byte ptr msize
+    call vnum2
+    mov si,offset msgx
+    call vtext
+    mov al,byte ptr msize
+    call vnum2
+    mov dh,5
+    mov dl,RIGHTX
+    mov si,offset msgsopt
+    mov ah,A_MSG
+    call vtext
+    mov ax,optlen
+    mov bl,A_MSG
+    call vnum4
+    mov si,offset msgstep
+    call vtext
+    mov dh,6
+    mov dl,RIGHTX
+    mov ah,A_HUD
+    cmp runner,0
+    je sh_sight
+    mov si,offset msgysee
+    call vtext
+    jmp sh_list
+sh_sight:
+    mov si,offset msgsee
+    call vtext
+    mov al,byte ptr botsee
+    add al,'0'
+    call vchar
+    mov si,offset msgsq
+    call vtext
+sh_list:
+    mov dh,10
+    mov dl,RIGHTX
+    mov si,offset msghist
+    mov ah,A_DIM
+    call vtext
+
+    mov dh,20
+    mov dl,LEFTX
+    mov al,0DBh
+    mov ah,C_TAKEN
+    call vchar
+    mov si,offset msgsleg
+    mov ah,A_MSG
+    call vtext
+    mov al,0DBh
+    mov ah,C_OLD
+    call vchar
+    mov si,offset msgsleo
+    mov ah,A_MSG
+    call vtext
+    mov al,0DBh
+    mov ah,C_PLAY2
+    mov si,offset msgsleb
+    cmp runner,0
+    je sh_legend
+    mov ah,C_PLAY
+    mov si,offset msgsley
+sh_legend:
+    call vchar
+    mov ah,A_MSG
+    call vtext
+    mov al,0DBh
+    mov ah,C_EXIT
+    call vchar
+    mov si,offset msgslee
+    mov ah,A_MSG
+    call vtext
+
+    mov dh,22
+    mov dl,LEFTX
+    mov si,offset msglrn
+    cmp runner,0
+    je sh_status
+    mov si,offset msglrh
+sh_status:
+    mov ah,A_DIM
+    call vtext
+    cmp runner,0
+    jne sh_youkeys
+    call studykeys
+    jmp sh_rest
+sh_youkeys:
+    mov dh,23
+    mov dl,LEFTX
+    mov si,offset msgykey
+    mov ah,A_DIM
+    call vtext
+sh_rest:
+    call studycur
+    mov ax,trynum
+    dec ax                      ; finished tries so far
+    call studyhist
+    ret
+studyhud endp
+
+studykeys proc                  ; bot speed keys and the fast/slow indicator
+    push ax
+    push dx
+    push si
+    mov dh,23
+    mov dl,LEFTX
+    mov si,offset msgskey
+    mov ah,A_DIM
+    call vtext
+    mov si,offset msgsnrm
+    cmp fast,0
+    je sk_show
+    mov si,offset msgsfst
+    mov ah,A_WIN
+sk_show:
+    call vtext
+    pop si
+    pop dx
+    pop ax
+    ret
+studykeys endp
+
+studycur proc                   ; 'Try nn   nnnn steps' for the running try
+    push ax
+    push bx
+    push dx
+    push si
+    mov bl,A_P2
+    cmp runner,0
+    je sc_show
+    mov bl,A_P1
+sc_show:
+    mov dh,8
+    mov dl,RIGHTX
+    mov si,offset msgtry
+    mov ah,bl
+    call vtext
+    mov al,byte ptr trynum
+    call vnum2
+    mov si,offset msgtgap
+    call vtext
+    mov ax,steps[2]
+    call vnum4
+    mov si,offset msgstep
+    mov ah,bl
+    call vtext
+    pop si
+    pop dx
+    pop bx
+    pop ax
+    ret
+studycur endp
+
+; ===========================================================================
+; studyhist - list the last 8 finished tries of the runner
+;             IN: AX = number of finished tries
+; ===========================================================================
+studyhist proc
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    mov bx,ax                   ; BX = number of tries to list up to
+    mov cx,ax
+    sub cx,8
+    jnc sh_from
+    xor cx,cx
+sh_from:                        ; CX = first try shown (0-based)
+    mov dh,11
+sh_loop:
+    cmp cx,bx
+    jae sh_done
+    cmp cx,MAXTRY
+    jae sh_done
+    push bx
+    mov dl,RIGHTX
+    mov si,offset msgtry
+    mov ah,A_DIM
+    call vtext
+    mov al,cl
+    inc al
+    call vnum2
+    mov si,offset msgtgap
+    call vtext
+    mov bx,histp
+    mov si,cx
+    shl si,1
+    mov ax,[bx+si]              ; length of this try
+    push ax
+    mov bl,A_MSG
+    call vnum4
+    mov si,offset msgstep
+    mov ah,A_MSG
+    call vtext
+    pop ax
+    mov si,offset msgnoop
+    cmp ax,optlen
+    jne sh_mark
+    mov si,offset msgisop
+    mov ah,A_WIN
+sh_mark:
+    call vtext
+    pop bx
+    inc cx
+    inc dh
+    jmp sh_loop
+sh_done:
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+studyhist endp
+
+studydone proc                  ; the bot is done: hand over to you
+    mov dh,22
+    call clrrow
+    mov dh,22
+    mov dl,LEFTX
+    mov si,offset msgbfnd
+    mov ah,A_WIN
+    call vtext
+    mov al,byte ptr trynum
+    call vnum2
+    mov si,offset msgftr
+    call vtext
+    mov dh,24
+    mov dl,LEFTX
+    mov si,offset msgsyou
+    mov ah,A_HUD
+    call vtext
+    ret
+studydone endp
+
+; ===========================================================================
+; histsum - AX = sum of the first CX words at DS:SI
+; ===========================================================================
+histsum proc
+    push cx
+    push si
+    xor ax,ax
+    jcxz hs_done
+hs_loop:
+    add ax,[si]
+    add si,2
+    loop hs_loop
+hs_done:
+    pop si
+    pop cx
+    ret
+histsum endp
+
+; ===========================================================================
+; studycmp - both have found the optimal path: show the two histories side
+;            by side, the totals, and who learned the maze faster
+; ===========================================================================
+studycmp proc
+    mov dh,19
+cp_clear:
+    call clrrow
+    inc dh
+    cmp dh,24
+    jbe cp_clear
+
+    mov bl,level
+    xor bh,bh
+    mov al,srtry[bx]
+    xor ah,ah
+    mov di,ax                   ; DI = bot tries
+    mov al,srhum[bx]
+    mov cx,ax                   ; CX = your tries
+    cmp cx,di
+    jae cp_max
+    mov cx,di
+cp_max:                         ; CX = rows needed (the longer list)
+    mov dh,10
+    mov dl,RIGHTX
+    mov si,offset msgcmph
+    mov ah,A_DIM
+    call vtext
+    mov bx,cx
+    sub bx,8
+    jnc cp_first
+    xor bx,bx
+cp_first:                       ; BX = first try shown (0-based)
+    mov dh,11
+cp_row:
+    cmp dh,18
+    ja cp_totals
+    mov dl,RIGHTX
+    cmp bx,cx
+    jb cp_entry
+    mov si,offset msgblnk       ; nothing left to list on this row
+    mov ah,A_DIM
+    call vtext
+    jmp cp_next
+cp_entry:
+    mov si,offset msgtry
+    mov ah,A_DIM
+    call vtext
+    mov al,bl
+    inc al
+    call vnum2
+    mov si,offset msgcgap
+    call vtext
+    push bx
+    mov si,offset hist
+    mov ax,di                   ; bot tries
+    call cpvalue                ; bot column
+    pop bx
+    mov si,offset msgcgap
+    mov ah,A_DIM
+    call vtext
+    push bx
+    mov si,offset hhist
+    mov ax,cx                   ; your tries
+    call cpvalue                ; your column
+    pop bx
+    mov si,offset msgcpad       ; wipe the rest of the old history line
+    mov ah,A_DIM
+    call vtext
+cp_next:
+    inc bx
+    inc dh
+    jmp cp_row
+
+cp_totals:
+    mov dh,19
+    mov dl,LEFTX
+    mov si,offset msgcbot
+    mov ah,A_P2
+    call vtext
+    mov ax,di
+    mov ah,A_P2
+    call vnum2
+    mov si,offset msgcmid
+    call vtext
+    push cx
+    mov cx,di
+    mov si,offset hist
+    call histsum
+    pop cx
+    push ax                     ; bot total steps
+    mov bl,A_P2
+    call vnum4
+    mov si,offset msgcend
+    mov ah,A_P2
+    call vtext
+    mov dh,20
+    mov dl,LEFTX
+    mov si,offset msgcyou
+    mov ah,A_P1
+    call vtext
+    mov ax,cx
+    mov ah,A_P1
+    call vnum2
+    mov si,offset msgcmid
+    call vtext
+    mov si,offset hhist
+    call histsum
+    push ax                     ; your total steps
+    mov bl,A_P1
+    call vnum4
+    mov si,offset msgcend
+    mov ah,A_P1
+    call vtext
+    pop dx                      ; DX = your total steps
+    pop ax                      ; AX = bot total steps
+
+    mov bl,level
+    xor bh,bh
+    cmp cx,di                   ; fewer tries learned faster ...
+    jb cp_you
+    ja cp_bot
+    cmp dx,ax                   ; ... then fewer steps in total
+    jb cp_you
+    ja cp_bot
+    mov srwin[bx],2
+    mov si,offset msgvtie
+    mov ah,A_TITLE
+    jmp cp_verdict
+cp_you:
+    mov srwin[bx],1
+    mov si,offset msgvyou
+    mov ah,A_WIN
+    jmp cp_verdict
+cp_bot:
+    mov srwin[bx],0
+    mov si,offset msgvbot
+    mov ah,A_LOSE
+cp_verdict:
+    mov dh,22
+    mov dl,LEFTX
+    call vtext
+    mov dh,24
+    mov dl,LEFTX
+    mov si,offset msgsnxt
+    cmp level,NLEV-1
+    jb cp_keys
+    mov si,offset msgslst
+cp_keys:
+    mov ah,A_HUD
+    call vtext
+    ret
+studycmp endp
+
+; ===========================================================================
+; cpvalue - one cell of the comparison table: try BX of the history at SI
+;           (AX = number of tries in it), or '----' when there is none.
+;           The optimal try is shown in green.
+; ===========================================================================
+cpvalue proc
+    cmp bx,ax
+    jb cv_have
+    mov si,offset msgdash4
+    mov ah,A_DIM
+    call vtext
+    ret
+cv_have:
+    shl bx,1
+    mov ax,[bx+si]
+    mov bl,A_MSG
+    cmp ax,optlen
+    jne cv_show
+    mov bl,A_WIN
+cv_show:
+    call vnum4
+    ret
+cpvalue endp
+
+; ===========================================================================
+; studyfinal - every stage: optimal length, tries of the bot and of you,
+;              who was faster; then the overall count
+; ===========================================================================
+studyfinal proc
+    call cls
+    mov dh,3
+    mov dl,26
+    mov si,offset msgsres
+    mov ah,A_TITLE
+    call vtext
+    xor bx,bx
+    mov dh,7
+sf_loop:
+    cmp bx,NLEV
+    jb sf_stage
+    jmp sf_overall
+sf_stage:
+    mov dl,2
+    mov si,offset msgstg
+    mov ah,A_HUD
+    call vtext
+    mov al,bl
+    add al,'1'
+    call vchar
+    mov si,offset msgtgap
+    call vtext
+    mov al,sizes[bx]
+    call vnum2
+    mov si,offset msgx
+    call vtext
+    mov al,sizes[bx]
+    call vnum2
+    mov si,offset msgrs1
+    mov ah,A_MSG
+    call vtext
+    push bx
+    shl bx,1
+    mov ax,sropt[bx]
+    mov bl,A_MSG
+    call vnum4
+    pop bx
+    mov si,offset msgrbt
+    mov ah,A_P2
+    call vtext
+    mov al,srtry[bx]
+    call vnum2
+    mov si,offset msgrs3
+    call vtext
+    mov si,offset msgryu
+    mov ah,A_P1
+    call vtext
+    mov al,srhum[bx]
+    call vnum2
+    mov si,offset msgrs3
+    call vtext
+    mov si,offset msgwtie
+    mov ah,A_TITLE
+    cmp srwin[bx],2
+    je sf_who
+    mov si,offset msgwyou
+    mov ah,A_WIN
+    cmp srwin[bx],1
+    je sf_who
+    mov si,offset msgwbot
+    mov ah,A_LOSE
+sf_who:
+    call vtext
+    inc bx
+    add dh,2
+    jmp sf_loop
+sf_overall:
+    xor cx,cx                   ; CL = your stages, CH = bot stages
+    xor dx,dx                   ; DL = ties
+    xor bx,bx
+sf_count:
+    mov al,srwin[bx]
+    cmp al,1
+    jne sf_notyou
+    inc cl
+sf_notyou:
+    cmp al,0
+    jne sf_notbot
+    inc ch
+sf_notbot:
+    cmp al,2
+    jne sf_nottie
+    inc dl
+sf_nottie:
+    inc bx
+    cmp bx,NLEV
+    jb sf_count
+    mov bl,dl                   ; BL = ties
+    mov dh,14
+    mov dl,2
+    mov si,offset msgov1
+    mov ah,A_MSG
+    call vtext
+    mov al,cl
+    add al,'0'
+    call vchar
+    mov si,offset msgov2
+    call vtext
+    mov al,ch
+    add al,'0'
+    call vchar
+    mov si,offset msgov3
+    call vtext
+    mov al,bl
+    add al,'0'
+    call vchar
+    mov al,'.'
+    call vchar
+    mov dh,17
+    mov dl,1
+    mov si,offset msgrsn
+    mov ah,A_DIM
+    call vtext
+    mov dh,20
+    mov dl,27
+    mov si,offset msgany
+    mov ah,A_DIM
+    call vtext
+    mov ah,0
+    int 16h
+    ret
+studyfinal endp
 
 end main

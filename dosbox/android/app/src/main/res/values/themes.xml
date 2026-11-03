@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="dos_blue">#FF0000AA</color>
+    <color name="dos_black">#FF000000</color>
+    <color name="dos_green">#FF55FF55</color>
+
+    <style name="AppTheme" parent="android:Theme.Material">
+        <item name="android:colorPrimary">@color/dos_blue</item>
+        <item name="android:colorPrimaryDark">@color/dos_black</item>
+        <item name="android:colorAccent">@color/dos_green</item>
+        <item name="android:windowBackground">@color/dos_black</item>
+        <item name="android:navigationBarColor">@color/dos_black</item>
+    </style>
+</resources>

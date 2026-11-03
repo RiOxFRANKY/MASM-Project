@@ -10,6 +10,8 @@ C:\>link MAZE.OBJ;
 C:\>MAZE
 ```
 
+An Android app with the same emulator core lives in [`android/`](android/README.md). It shows a phone-sized DOS screen with an extra-keys bar, a 2-player gamepad, and import/export of `.EXE` files.
+
 ## Build and run
 
 ```

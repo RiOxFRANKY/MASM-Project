@@ -1,0 +1,17 @@
+[package]
+name = "dosbox-android"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "dosbox_android"
+crate-type = ["cdylib"]
+
+[dependencies]
+dosbox = { path = "../.." }
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+codegen-units = 1
