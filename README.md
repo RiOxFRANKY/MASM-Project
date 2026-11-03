@@ -46,7 +46,7 @@
 - **It always finishes.** If a try finds no new wall, the bot walked its first plan. That plan is a shortest path on a map where unseen squares count as open, so it can't be longer than the real shortest path. Every other try uncovers at least one new wall, and a maze has only so many walls.
 
 **Two players over the network (PvP)**
-- Run the [maze server](server/README.md) on a PC reachable by both players: `cargo run --release --manifest-path server/Cargo.toml -- <port>`. The server prints the LAN IP address to enter on each device.
+- Run the [maze server](server/README.md) on a PC reachable by both players. On 64-bit Windows, use [server.exe](bin/windows-x86_64/server.exe) with a port, for example `bin\windows-x86_64\server.exe 9000`. The server prints the LAN IP address to enter on each device.
 - Each player runs `MAZE` in this repository's DOSBox-RS desktop emulator or Android app, presses **2**, and enters the server IP and port. The game remembers the last values in `C:\MAZE.CFG`.
 - The first two searching players are paired and receive the same maze seed. Each player steers the left maze with the arrows or W A S D; the right maze shows the opponent's moves live.
 - Both players wait for the other before each level's countdown. The server decides who reached the exit first, or whose remaining path is shorter at time-out. If either player leaves, the other is notified.
@@ -67,6 +67,10 @@ Write a MASM program to draw a simple maze using the # character to represent wa
 ### DOSBox-RS (this repository)
 
 The `dosbox` folder contains an 8086 emulator with a built-in MASM and LINK. From the repository root:
+
+On 64-bit Windows, the ready-to-run [dosbox.exe](bin/windows-x86_64/dosbox.exe) includes the network service. Start it with `bin\windows-x86_64\dosbox.exe Code`, then use the MASM and LINK commands below. Close any older DOSBox-RS window before starting this build.
+
+To build the executable from source:
 
 ```
 cargo +stable-x86_64-pc-windows-gnu build --release --manifest-path dosbox/Cargo.toml

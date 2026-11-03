@@ -4,6 +4,14 @@ A small WebSocket server for MAZE's two-player network mode (menu option **2**).
 
 ## Run
 
+On 64-bit Windows, run the prebuilt [server.exe](../bin/windows-x86_64/server.exe) from the repository root:
+
+```
+bin\windows-x86_64\server.exe 9000
+```
+
+`server.exe` is the same server program that Cargo builds as `maze.exe`. To build it from source, run these commands from the `server` folder:
+
 ```
 cargo build --release
 target/release/maze <port>        (maze.exe on Windows)
