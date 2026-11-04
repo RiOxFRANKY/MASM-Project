@@ -31,15 +31,15 @@
   - It plans the shortest path with A\* over what it knows, treating unseen squares as open. It replans every time it spots a new wall, so it sometimes walks into a dead end, like a person would.
   - It never uses the game's own distance table. It moves at the fixed speed shown above, set by the BIOS clock.
 
-**Mode 3: cognitive study (the bot learns, then you do)**
+**Mode 3: cognitive study (you learn first, then the bot)**
 - One maze is shown per stage. Each stage has two runs on **the same maze**, under the same rule: walk from the start to the exit **again and again** until one try is exactly as long as the **optimal path**.
-  1. **The bot runs first.** It keeps its own map between tries, so each try is planned with everything it has seen before. Its sight is 1 square around it. The game knows the optimal length from its BFS table, but the bot never reads it.
-  2. **Then it's your turn** (arrows or W A S D). You see the whole maze.
+  1. **You run first** (arrows or W A S D). You explore and learn the maze fresh without seeing the bot's moves beforehand, ensuring you cannot copy its route.
+  2. **Then it's the bot's turn** on the same maze. It keeps its own map between tries, so each try is planned with everything it has seen before. Its sight is 1 square around it. The game knows the optimal length from its BFS table, but the bot never reads it.
 - During each run the screen shows:
   - in the maze: the current try's path in **red** and earlier tries in **grey**
   - on the right: the length of every try, with **OPTIMAL** on the one that hit the shortest length
   - once it's found: the optimal try's path in **yellow**
-- **Comparison:** after your run, the two histories are listed side by side, together with the tries needed and the total steps walked.
+- **Comparison:** after both runs, the two histories are listed side by side, together with the tries needed and the total steps walked.
   - Whoever needed **fewer tries** learned the maze faster. If the tries are equal, fewer total steps wins.
 - Stages: 15 × 15, 24 × 24 and 36 × 36. ENTER moves on, and the results screen lists every stage (optimal length, bot tries, your tries, who was faster) plus the overall count.
 - The bot moves at full speed. **SPACE** switches its run to a slow, 18 steps/s view and back. **ESC** returns to the menu.

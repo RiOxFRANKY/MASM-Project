@@ -174,13 +174,13 @@ msgm2a  db 'Each player runs MAZE on their own PC or phone and presses 2,$'
 msgm2b  db 'then types the server IP and port; the server pairs them up.$'
 msgm2c  db 'Start the server on one PC in the same Wi-Fi:  maze <port>$'
 msgm2d  db 'Same maze for both. First to the exit wins (30/45/60 s).$'
-msgm5   db '3   Cognitive study (the bot learns)$'
-msgm5a  db 'The bot runs one maze again and again, keeping what it has$'
-msgm5b  db 'seen, until it walks the optimal path. Then you do the same$'
-msgm5c  db 'on that maze and both learning curves are compared. 3 stages.$'
+msgm5   db '3   Cognitive study (human learns first)$'
+msgm5a  db 'You run one maze again and again until you walk the optimal$'
+msgm5b  db 'path. Then the bot does the same on that maze, keeping what it$'
+msgm5c  db 'has seen, and both learning curves are compared. 3 stages.$'
 msgm3   db 'ESC Exit to DOS$'
 msgm4   db 'Press 1, 2 or 3$'
-msgstud db ' COGNITIVE STUDY - THE BOT LEARNS ONE MAZE $'
+msgstud db ' COGNITIVE STUDY - NOW THE BOT: SAME MAZE, SAME RULE $'
 msgstg  db 'Stage $'
 msgsopt db 'Optimal path  $'
 msgstep db ' steps$'
@@ -196,7 +196,8 @@ msgsleo db ' earlier tries   $'
 msgsleb db ' bot   $'
 msgslee db ' exit$'
 msglrn  db 'Learning: every try starts again from the start, with all it has seen so far.$'
-msgnopt db 'Not optimal yet - it tries again with what it learned.                       $'
+msgnopt db 'Not optimal yet - the bot tries again with what it learned.              $'
+msgnopy db 'Not optimal yet - try again with what you learned.                      $'
 msgftr  db ' TRY(S) $'
 msgdash4 db '----$'
 msgskey db 'SPACE = slow / fast speed    ESC = menu$'
@@ -216,14 +217,14 @@ msgov1  db 'Overall: you were faster on $'
 msgov2  db ' stage(s), the bot on $'
 msgov3  db ', ties $'
 msgrsn  db 'The bot never sees the whole maze: it learns only from what it has walked past.$'
-msgstuh db ' COGNITIVE STUDY - NOW YOU: SAME MAZE, SAME RULE $'
+msgstuh db ' COGNITIVE STUDY - YOU LEARN THE MAZE FIRST $'
 msgysee db 'You see the whole maze             $'
 msgsley db ' you   $'
 msglrh  db 'Your turn: walk from the start to the exit, again until your path is optimal.$'
 msgykey db 'Arrows / W A S D = move    ESC = menu              $'
-msgbfnd db ' THE BOT FOUND THE OPTIMAL PATH AFTER $'
-msgsyou db 'ENTER = your turn on the same maze       ESC = menu$'
-msgcmph db 'Try        BOT      YOU       $'
+msgbfnd db ' YOU FOUND THE OPTIMAL PATH AFTER $'
+msgsyou db 'ENTER = the bot''s turn on the same maze       ESC = menu$'
+msgcmph db 'Try        YOU      BOT       $'
 msgcgap db '     $'
 msgcpad db '      $'
 msgblnk db '                              $'
@@ -2528,11 +2529,11 @@ fs_show:
 finalscreen endp
 
 ; ===========================================================================
-; study - mode 3, cognitive study. On each stage the bot first runs the
-;   same maze again and again from the start, keeping its own map (known[])
-;   between tries, until one try is exactly as long as the optimal path.
-;   Then it is your turn on the same maze with the same rule, and the two
-;   learning curves are compared.
+; study - mode 3, cognitive study. On each stage you first run the
+;   fresh maze again and again from the start, learning it by yourself
+;   without seeing the bot's moves, until one try is as long as the
+;   optimal path. Then the bot does the same on that maze, keeping its own
+;   map (known[]) between tries, and the two learning curves are compared.
 ;   Why the bot always gets there: if a try discovers no new wall, the bot
 ;   walked its first plan - a shortest path on a map where unseen squares
 ;   count as open, which is never longer than the true shortest path - so
@@ -2546,7 +2547,6 @@ study proc
 sy_stage:
     call setup
     call buildmaze
-    call botinit                ; a new maze: the bot knows nothing yet
     mov bl,level
     xor bh,bh
     mov al,stview[bx]
@@ -2556,22 +2556,11 @@ sy_stage:
     shl bx,1
     mov ax,dexit[bx]
     mov optlen,ax               ; for the referee only
-    mov runner,0                ; first the bot ...
-    mov histp,offset hist
-    call learn
-    or al,al
-    jnz sy_quit
     mov bl,level
     xor bh,bh
-    mov al,byte ptr trynum
-    mov srtry[bx],al
     shl bx,1
-    mov ax,optlen
     mov sropt[bx],ax
-    call studydone
-    call studyenter
-    jc sy_quit
-    mov runner,1                ; ... then you, on the same maze
+    mov runner,1                ; first you, on the fresh maze ...
     mov histp,offset hhist
     call learn
     or al,al
@@ -2580,6 +2569,19 @@ sy_stage:
     xor bh,bh
     mov al,byte ptr trynum
     mov srhum[bx],al
+    call studydone
+    call studyenter
+    jc sy_quit
+    call botinit                ; a new maze for the bot: it knows nothing yet
+    mov runner,0                ; ... then the bot, on the same maze
+    mov histp,offset hist
+    call learn
+    or al,al
+    jnz sy_quit
+    mov bl,level
+    xor bh,bh
+    mov al,byte ptr trynum
+    mov srtry[bx],al
     call studycmp
     call studyenter
     jc sy_quit
@@ -2657,6 +2659,10 @@ lr_moved:
     mov dh,22
     mov dl,LEFTX
     mov si,offset msgnopt
+    cmp runner,0
+    je lr_nopt
+    mov si,offset msgnopy
+lr_nopt:
     mov ah,A_MSG
     call vtext
     mov cx,27                   ; show the result for a moment
@@ -3041,7 +3047,7 @@ sh_done:
     ret
 studyhist endp
 
-studydone proc                  ; the bot is done: hand over to you
+studydone proc                  ; you are done: hand over to the bot
     mov dh,22
     call clrrow
     mov dh,22
@@ -3133,17 +3139,17 @@ cp_entry:
     mov si,offset msgcgap
     call vtext
     push bx
-    mov si,offset hist
-    mov ax,di                   ; bot tries
-    call cpvalue                ; bot column
+    mov si,offset hhist
+    mov ax,cx                   ; your tries
+    call cpvalue                ; your column
     pop bx
     mov si,offset msgcgap
     mov ah,A_DIM
     call vtext
     push bx
-    mov si,offset hhist
-    mov ax,cx                   ; your tries
-    call cpvalue                ; your column
+    mov si,offset hist
+    mov ax,di                   ; bot tries
+    call cpvalue                ; bot column
     pop bx
     mov si,offset msgcpad       ; wipe the rest of the old history line
     mov ah,A_DIM
@@ -3155,6 +3161,24 @@ cp_next:
 
 cp_totals:
     mov dh,19
+    mov dl,LEFTX
+    mov si,offset msgcyou
+    mov ah,A_P1
+    call vtext
+    mov ax,cx
+    mov ah,A_P1
+    call vnum2
+    mov si,offset msgcmid
+    call vtext
+    mov si,offset hhist
+    call histsum
+    push ax                     ; your total steps
+    mov bl,A_P1
+    call vnum4
+    mov si,offset msgcend
+    mov ah,A_P1
+    call vtext
+    mov dh,20
     mov dl,LEFTX
     mov si,offset msgcbot
     mov ah,A_P2
@@ -3175,26 +3199,8 @@ cp_totals:
     mov si,offset msgcend
     mov ah,A_P2
     call vtext
-    mov dh,20
-    mov dl,LEFTX
-    mov si,offset msgcyou
-    mov ah,A_P1
-    call vtext
-    mov ax,cx
-    mov ah,A_P1
-    call vnum2
-    mov si,offset msgcmid
-    call vtext
-    mov si,offset hhist
-    call histsum
-    push ax                     ; your total steps
-    mov bl,A_P1
-    call vnum4
-    mov si,offset msgcend
-    mov ah,A_P1
-    call vtext
-    pop dx                      ; DX = your total steps
     pop ax                      ; AX = bot total steps
+    pop dx                      ; DX = your total steps
 
     mov bl,level
     xor bh,bh
@@ -3299,17 +3305,17 @@ sf_stage:
     mov bl,A_MSG
     call vnum4
     pop bx
-    mov si,offset msgrbt
-    mov ah,A_P2
-    call vtext
-    mov al,srtry[bx]
-    call vnum2
-    mov si,offset msgrs3
-    call vtext
     mov si,offset msgryu
     mov ah,A_P1
     call vtext
     mov al,srhum[bx]
+    call vnum2
+    mov si,offset msgrs3
+    call vtext
+    mov si,offset msgrbt
+    mov ah,A_P2
+    call vtext
+    mov al,srtry[bx]
     call vnum2
     mov si,offset msgrs3
     call vtext
