@@ -2033,6 +2033,9 @@ cc_study:                       ; mode 3: this try red, earlier tries grey
     cmp trail[si+MAXC],0
     jne cc_taken
 cs_old:
+    cmp runner,0
+    jne cc_floor                ; you: earlier tries are not shown, you
+                                ;      learn the maze from your own memory
     cmp trail[si],0
     je cc_floor
     mov bl,C_OLD
@@ -2880,12 +2883,15 @@ sh_list:
     mov si,offset msgsleg
     mov ah,A_MSG
     call vtext
+    cmp runner,0
+    jne sh_noold                ; earlier tries are grey for the bot only
     mov al,0DBh
     mov ah,C_OLD
     call vchar
     mov si,offset msgsleo
     mov ah,A_MSG
     call vtext
+sh_noold:
     mov al,0DBh
     mov ah,C_PLAY2
     mov si,offset msgsleb
