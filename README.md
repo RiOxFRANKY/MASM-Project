@@ -36,7 +36,7 @@
   1. **You run first** (arrows or W A S D). You explore and learn the maze fresh without seeing the bot's moves beforehand, ensuring you cannot copy its route.
   2. **Then it's the bot's turn** on the same maze. It keeps its own map between tries, so each try is planned with everything it has seen before. Its sight is 1 square around it. The game knows the optimal length from its BFS table, but the bot never reads it.
 - During each run the screen shows:
-  - in the maze: the current try's path in **red** and earlier tries in **grey**
+  - in the maze: the current try's path in **red**. Earlier tries are shown in **grey** only on the bot's run; on your run they are wiped at the start of every new try, so you have to find the way from memory
   - on the right: the length of every try, with **OPTIMAL** on the one that hit the shortest length
   - once it's found: the optimal try's path in **yellow**
 - **Comparison:** after both runs, the two histories are listed side by side, together with the tries needed and the total steps walked.
