@@ -7,6 +7,7 @@ pub const FINISHED: u8 = b'F';
 pub const DISTANCE: u8 = b'D';
 pub const RESULT: u8 = b'R';
 pub const LEFT: u8 = b'X';
+pub const NAME: u8 = b'N';
 
 pub const DRAW: u8 = 2;
 pub const BY_EXIT: u8 = 0;

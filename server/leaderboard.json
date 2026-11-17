@@ -1,0 +1,146 @@
+{
+  "players": [
+    {
+      "rank": 1,
+      "ip": "192.168.1.101",
+      "name": "Alice",
+      "score": 1948,
+      "matches_played": 4,
+      "matches_won": 4,
+      "matches_lost": 0,
+      "matches_drawn": 0,
+      "win_rate": 100.0,
+      "levels_played": 12,
+      "levels_won_exit": 10,
+      "levels_won_time": 0,
+      "levels_drawn": 0,
+      "total_time_bonus": 228
+    },
+    {
+      "rank": 2,
+      "ip": "192.168.1.102",
+      "name": "Bob",
+      "score": 1678,
+      "matches_played": 4,
+      "matches_won": 3,
+      "matches_lost": 1,
+      "matches_drawn": 0,
+      "win_rate": 75.0,
+      "levels_played": 12,
+      "levels_won_exit": 9,
+      "levels_won_time": 1,
+      "levels_drawn": 0,
+      "total_time_bonus": 148
+    },
+    {
+      "rank": 3,
+      "ip": "192.168.1.103",
+      "name": "Charlie",
+      "score": 1188,
+      "matches_played": 4,
+      "matches_won": 2,
+      "matches_lost": 2,
+      "matches_drawn": 0,
+      "win_rate": 50.0,
+      "levels_played": 12,
+      "levels_won_exit": 7,
+      "levels_won_time": 0,
+      "levels_drawn": 0,
+      "total_time_bonus": 68
+    },
+    {
+      "rank": 4,
+      "ip": "192.168.1.104",
+      "name": "Diana",
+      "score": 450,
+      "matches_played": 4,
+      "matches_won": 1,
+      "matches_lost": 3,
+      "matches_drawn": 0,
+      "win_rate": 25.0,
+      "levels_played": 12,
+      "levels_won_exit": 0,
+      "levels_won_time": 3,
+      "levels_drawn": 0,
+      "total_time_bonus": 0
+    },
+    {
+      "rank": 5,
+      "ip": "192.168.1.105",
+      "name": "Evan",
+      "score": 120,
+      "matches_played": 4,
+      "matches_won": 0,
+      "matches_lost": 4,
+      "matches_drawn": 0,
+      "win_rate": 0.0,
+      "levels_played": 12,
+      "levels_won_exit": 0,
+      "levels_won_time": 0,
+      "levels_drawn": 0,
+      "total_time_bonus": 0
+    }
+  ],
+  "recent_matches": [
+    {
+      "p1": "Alice",
+      "p2": "Bob",
+      "score": "2-1",
+      "winner": "Alice"
+    },
+    {
+      "p1": "Alice",
+      "p2": "Charlie",
+      "score": "2-1",
+      "winner": "Alice"
+    },
+    {
+      "p1": "Alice",
+      "p2": "Diana",
+      "score": "3-0",
+      "winner": "Alice"
+    },
+    {
+      "p1": "Alice",
+      "p2": "Evan",
+      "score": "3-0",
+      "winner": "Alice"
+    },
+    {
+      "p1": "Bob",
+      "p2": "Charlie",
+      "score": "3-0",
+      "winner": "Bob"
+    },
+    {
+      "p1": "Bob",
+      "p2": "Diana",
+      "score": "3-0",
+      "winner": "Bob"
+    },
+    {
+      "p1": "Bob",
+      "p2": "Evan",
+      "score": "3-0",
+      "winner": "Bob"
+    },
+    {
+      "p1": "Charlie",
+      "p2": "Diana",
+      "score": "3-0",
+      "winner": "Charlie"
+    },
+    {
+      "p1": "Charlie",
+      "p2": "Evan",
+      "score": "3-0",
+      "winner": "Charlie"
+    },
+    {
+      "p1": "Diana",
+      "p2": "Evan",
+      "score": "3-0",
+      "winner": "Diana"
+    }
+  ]
+}

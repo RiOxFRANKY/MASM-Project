@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='UTF-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0'>
+<meta http-equiv='refresh' content='5'>
+<title>MAZE PvP Leaderboard</title>
+<style>
+  :root { --bg: #0f141c; --card: #18202c; --border: #283548; --accent: #00d26a; --gold: #ffbe0b; --silver: #e0e1dd; --bronze: #cd7f32; --text: #e2e8f0; --dim: #8892b0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+  body { background: var(--bg); color: var(--text); padding: 25px; line-height: 1.5; }
+  .container { max-width: 1050px; margin: 0 auto; }
+  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; border-bottom: 2px solid var(--border); padding-bottom: 15px; }
+  h1 { font-size: 2rem; color: #fff; text-shadow: 0 0 10px rgba(0, 210, 106, 0.5); }
+  .live-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #00ff66; box-shadow: 0 0 8px #00ff66; margin-right: 8px; }
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 25px; }
+  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 18px; text-align: center; }
+  .stat-card h3 { color: var(--dim); font-size: 0.85rem; text-transform: uppercase; margin-bottom: 6px; }
+  .stat-card .val { font-size: 1.8rem; font-weight: bold; color: var(--accent); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 25px; }
+  .card-title { font-size: 1.25rem; margin-bottom: 15px; color: #fff; display: flex; justify-content: space-between; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 12px 14px; border-bottom: 1px solid var(--border); text-align: left; }
+  th { color: var(--dim); font-size: 0.8rem; text-transform: uppercase; }
+  .player-name { font-weight: 600; color: #fff; }
+  .score-cell { font-weight: 700; color: var(--gold); font-size: 1.15rem; }
+  .bonus-cell { color: #00e5ff; font-weight: 500; }
+  .record { color: var(--dim); font-size: 0.85rem; }
+  .badge { padding: 3px 10px; border-radius: 12px; font-weight: bold; font-size: 0.85rem; }
+  .badge.gold { background: rgba(255, 190, 11, 0.2); color: var(--gold); border: 1px solid var(--gold); }
+  .badge.silver { background: rgba(224, 225, 221, 0.2); color: var(--silver); border: 1px solid var(--silver); }
+  .badge.bronze { background: rgba(205, 127, 50, 0.2); color: var(--bronze); border: 1px solid var(--bronze); }
+  .rank-num { color: var(--dim); font-weight: bold; margin-left: 6px; }
+  .bar-bg { display: inline-block; width: 60px; height: 7px; background: #222b38; border-radius: 4px; overflow: hidden; vertical-align: middle; }
+  .bar-fill { height: 100%; background: var(--accent); }
+  .formula { font-size: 0.85rem; color: var(--dim); line-height: 1.6; background: #111722; padding: 12px; border-radius: 6px; border-left: 3px solid var(--accent); }
+  footer { text-align: center; color: var(--dim); font-size: 0.8rem; margin-top: 30px; }
+</style>
+</head>
+<body>
+<div class='container'>
+  <header>
+    <div>
+      <h1>🏁 MAZE PvP LEADERBOARD</h1>
+      <p style='color: var(--dim); font-size: 0.9rem;'>16-bit Retro MS-DOS Maze Racing Competition</p>
+    </div>
+    <div style='font-size: 0.9rem; color: #aaa;'><span class='live-dot'></span>5-Client Tournament Finished</div>
+  </header>
+  <div class='stats-grid'>
+    <div class='stat-card'><h3>Active Competitors</h3><div class='val'>5</div></div>
+    <div class='stat-card'><h3>Matches Played</h3><div class='val'>10</div></div>
+    <div class='stat-card'><h3>Top Score</h3><div class='val'>1948</div></div>
+  </div>
+  <div class='card'>
+    <div class='card-title'><span>🏆 Player Rankings</span><span style='font-size: 0.8rem; color: var(--dim);'>5-Client Tournament Results</span></div>
+    <table>
+      <thead><tr><th>Rank</th><th>Player</th><th>Score</th><th>Matches (W-L-D)</th><th>Win Rate</th><th>Levels Won</th><th>Speed Bonus</th></tr></thead>
+      <tbody>
+        <tr><td><span class='badge gold'>🥇 1</span></td><td class='player-name'>Alice <small style='color:#777'>(192.168.1.101)</small></td><td class='score-cell'>1948</td><td>4 <span class='record'>(4-0-0)</span></td><td><div class='bar-bg'><div class='bar-fill' style='width: 100%'></div></div> 100%</td><td>10 <small style='color:#888'>(10 exit / 0 time)</small></td><td class='bonus-cell'>+228</td></tr>
+        <tr><td><span class='badge silver'>🥈 2</span></td><td class='player-name'>Bob <small style='color:#777'>(192.168.1.102)</small></td><td class='score-cell'>1678</td><td>4 <span class='record'>(3-1-0)</span></td><td><div class='bar-bg'><div class='bar-fill' style='width: 75%'></div></div> 75%</td><td>10 <small style='color:#888'>(9 exit / 1 time)</small></td><td class='bonus-cell'>+148</td></tr>
+        <tr><td><span class='badge bronze'>🥉 3</span></td><td class='player-name'>Charlie <small style='color:#777'>(192.168.1.103)</small></td><td class='score-cell'>1188</td><td>4 <span class='record'>(2-2-0)</span></td><td><div class='bar-bg'><div class='bar-fill' style='width: 50%'></div></div> 50%</td><td>7 <small style='color:#888'>(7 exit / 0 time)</small></td><td class='bonus-cell'>+68</td></tr>
+        <tr><td><span class='rank-num'>#4</span></td><td class='player-name'>Diana <small style='color:#777'>(192.168.1.104)</small></td><td class='score-cell'>450</td><td>4 <span class='record'>(1-3-0)</span></td><td><div class='bar-bg'><div class='bar-fill' style='width: 25%'></div></div> 25%</td><td>3 <small style='color:#888'>(0 exit / 3 time)</small></td><td class='bonus-cell'>+0</td></tr>
+        <tr><td><span class='rank-num'>#5</span></td><td class='player-name'>Evan <small style='color:#777'>(192.168.1.105)</small></td><td class='score-cell'>120</td><td>4 <span class='record'>(0-4-0)</span></td><td><div class='bar-bg'><div class='bar-fill' style='width: 0%'></div></div> 0%</td><td>0 <small style='color:#888'>(0 exit / 0 time)</small></td><td class='bonus-cell'>+0</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class='card'>
+    <div class='card-title'><span>⏱ Recent Matches</span></div>
+    <table>
+      <thead><tr><th>Matchup</th><th>Score</th><th>Winner</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>Alice vs Bob</td><td style='font-weight:bold;'>2-1</td><td style='color:#00ff99;'>Alice</td><td>Finished</td></tr>
+        <tr><td>Alice vs Charlie</td><td style='font-weight:bold;'>2-1</td><td style='color:#00ff99;'>Alice</td><td>Finished</td></tr>
+        <tr><td>Alice vs Diana</td><td style='font-weight:bold;'>3-0</td><td style='color:#00ff99;'>Alice</td><td>Finished</td></tr>
+        <tr><td>Alice vs Evan</td><td style='font-weight:bold;'>3-0</td><td style='color:#00ff99;'>Alice</td><td>Finished</td></tr>
+        <tr><td>Bob vs Charlie</td><td style='font-weight:bold;'>3-0</td><td style='color:#00ff99;'>Bob</td><td>Finished</td></tr>
+        <tr><td>Bob vs Diana</td><td style='font-weight:bold;'>3-0</td><td style='color:#00ff99;'>Bob</td><td>Finished</td></tr>
+        <tr><td>Bob vs Evan</td><td style='font-weight:bold;'>3-0</td><td style='color:#00ff99;'>Bob</td><td>Finished</td></tr>
+        <tr><td>Charlie vs Diana</td><td style='font-weight:bold;'>3-0</td><td style='color:#00ff99;'>Charlie</td><td>Finished</td></tr>
+        <tr><td>Charlie vs Evan</td><td style='font-weight:bold;'>3-0</td><td style='color:#00ff99;'>Charlie</td><td>Finished</td></tr>
+        <tr><td>Diana vs Evan</td><td style='font-weight:bold;'>3-0</td><td style='color:#00ff99;'>Diana</td><td>Finished</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class='card'>
+    <div class='card-title'><span>📐 Scoring Metric Formula</span></div>
+    <div class='formula'>
+      <strong>Total Points = (Exit Wins × 100) + (Distance Wins × 60) + (Match Wins × 150) + (Draws × 50/30) + (Levels Played × 10) + Speed Bonus</strong><br>
+      • <strong>Exit Win (+100 pts)</strong>: Reached the exit square before the opponent.<br>
+      • <strong>Speed Bonus (+1 pt/sec left)</strong>: Remaining clock seconds awarded when reaching the exit.<br>
+      • <strong>Distance Win (+60 pts)</strong>: Closer to exit along true BFS maze distance when timer expires.<br>
+      • <strong>Match Win (+150 pts)</strong>: Won best-of-3 levels against the opponent.<br>
+      • <strong>Sportsmanship (+10 pts)</strong>: Awarded for every level played to reward participation.
+    </div>
+  </div>
+  <footer>MAZE PvP Server &bull; Automated 5-Client Tournament &bull; Classroom Competition Ready</footer>
+</div>
+</body>
+</html>

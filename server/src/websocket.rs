@@ -1,3 +1,4 @@
+use crate::leaderboard::Leaderboard;
 use crate::sha1::sha1;
 use std::io::{self, Read, Write};
 use std::net::TcpStream;
@@ -12,6 +13,11 @@ pub const OPCODE_PONG: u8 = 0xA;
 const ACCEPT_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const MAX_PAYLOAD: u64 = 64 * 1024;
 const BASE64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+pub enum HandshakeResult {
+    WebSocket,
+    HttpHandled,
+}
 
 pub struct Frame {
     pub opcode: u8,
@@ -37,7 +43,7 @@ pub fn accept_key(key: &str) -> String {
     base64(&sha1(format!("{}{ACCEPT_GUID}", key.trim()).as_bytes()))
 }
 
-pub fn server_handshake(stream: &mut TcpStream) -> io::Result<()> {
+pub fn server_handshake(stream: &mut TcpStream, leaderboard: &Leaderboard) -> io::Result<HandshakeResult> {
     let mut request = Vec::new();
     let mut byte = [0u8; 1];
     while !request.ends_with(b"\r\n\r\n") {
@@ -53,19 +59,34 @@ pub fn server_handshake(stream: &mut TcpStream) -> io::Result<()> {
         name.trim().eq_ignore_ascii_case("sec-websocket-key").then(|| value.trim().to_string())
     });
     let Some(key) = key else {
-        let body = "MAZE PvP server is running. Connect from MAZE.EXE (menu option 2).\n";
-        let reply = format!(
-            "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        );
-        let _ = stream.write_all(reply.as_bytes());
-        return Err(io::Error::other("not a WebSocket request"));
+        let first_line = text.lines().next().unwrap_or("");
+        let is_json = first_line.contains("/leaderboard.json")
+            || first_line.contains("/api")
+            || text.to_lowercase().contains("accept: application/json");
+
+        if is_json {
+            let json = leaderboard.generate_json();
+            let reply = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{json}",
+                json.len()
+            );
+            let _ = stream.write_all(reply.as_bytes());
+        } else {
+            let html = leaderboard.generate_html();
+            let reply = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{html}",
+                html.len()
+            );
+            let _ = stream.write_all(reply.as_bytes());
+        }
+        return Ok(HandshakeResult::HttpHandled);
     };
     let reply = format!(
         "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {}\r\n\r\n",
         accept_key(&key)
     );
-    stream.write_all(reply.as_bytes())
+    stream.write_all(reply.as_bytes())?;
+    Ok(HandshakeResult::WebSocket)
 }
 
 pub fn write_frame(stream: &mut TcpStream, opcode: u8, payload: &[u8]) -> io::Result<()> {
