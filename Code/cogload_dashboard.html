@@ -1,0 +1,1238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<title>MAZE Cognitive Load vs. A* Bot Comparison</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0f141c;
+    --card: #18202c;
+    --card-alt: #121924;
+    --border: #283548;
+    --accent: #00d26a;
+    --bot: #00e5ff;
+    --gold: #ffbe0b;
+    --danger: #ff5964;
+    --warn: #fb923c;
+    --text: #e2e8f0;
+    --dim: #8892b0;
+    --sb-thumb: #3b4b63;
+    --sb-track: #111722;
+    scrollbar-color: var(--sb-thumb) var(--sb-track);
+  }
+  @supports not (scrollbar-color: auto) {
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-thumb { background: var(--sb-thumb); border-radius: 6px; }
+    ::-webkit-scrollbar-track { background: var(--sb-track); }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    padding: 24px;
+    line-height: 1.5;
+  }
+  .container { max-width: 1200px; margin: 0 auto; }
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 22px;
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 16px;
+  }
+  h1 { font-size: 1.75rem; color: #fff; text-shadow: 0 0 12px rgba(0, 210, 106, 0.35); }
+  .subtitle { color: var(--dim); font-size: 0.92rem; }
+  .loader-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 10px 14px;
+    border-radius: 8px;
+  }
+  .btn {
+    background: #1f2b3c;
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 7px 12px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    font-weight: 600;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .btn:hover, .btn.active {
+    border-color: var(--accent);
+    background: rgba(0, 210, 106, 0.14);
+    color: #fff;
+  }
+  .btn.bot-active {
+    border-color: var(--bot);
+    background: rgba(0, 229, 255, 0.14);
+    color: #fff;
+  }
+  .file-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(0, 210, 106, 0.15);
+    border: 1px solid var(--accent);
+    color: #fff;
+    padding: 7px 12px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .file-label input { display: none; }
+  .status-pill {
+    font-size: 0.82rem;
+    color: var(--dim);
+  }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 14px;
+    margin-bottom: 22px;
+  }
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .stat-card h3 {
+    color: var(--dim);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+  }
+  .stat-card .val {
+    font-size: 1.55rem;
+    font-weight: 700;
+    color: #fff;
+  }
+  .stat-card .meta {
+    font-size: 0.82rem;
+    color: var(--dim);
+    margin-top: 4px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 22px;
+  }
+  .card-title {
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .table-wrapper {
+    overflow: auto;
+    max-inline-size: 100%;
+    max-block-size: min(520px, 75vh);
+    container-type: inline-size;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.88rem;
+  }
+  thead {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 2;
+    background: #131a24;
+  }
+  th, td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    white-space: nowrap;
+  }
+  th {
+    color: var(--dim);
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  tbody th {
+    position: sticky;
+    inset-inline-start: 0;
+    z-index: 1;
+    background: var(--card);
+    color: #fff;
+  }
+  tbody tr.clickable-row { cursor: pointer; }
+  tbody tr.clickable-row:hover td,
+  tbody tr.clickable-row:hover th { background: #1e2838; }
+  tbody tr.selected-row td,
+  tbody tr.selected-row th { background: rgba(0, 210, 106, 0.12); }
+  @container (width < 560px) {
+    .table-wrapper table, .table-wrapper thead, .table-wrapper tbody, .table-wrapper tr, .table-wrapper th, .table-wrapper td {
+      display: block;
+    }
+    .table-wrapper thead { display: none; }
+    .table-wrapper tr {
+      margin-block-end: 0.9rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .table-wrapper tbody th {
+      position: sticky;
+      inset-block-start: 0;
+      z-index: 2;
+      background: #131a24;
+    }
+    .table-wrapper td {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      white-space: normal;
+    }
+    .table-wrapper td::before {
+      content: attr(data-label) ": ";
+      color: var(--dim);
+      font-weight: 600;
+    }
+  }
+  .human-txt { color: var(--accent); font-weight: 700; }
+  .bot-txt { color: var(--bot); font-weight: 700; }
+  .gold-txt { color: var(--gold); font-weight: 700; }
+  .danger-txt { color: var(--danger); font-weight: 600; }
+  .badge {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 0.76rem;
+    text-transform: uppercase;
+  }
+  .badge-player { background: rgba(0, 210, 106, 0.16); color: var(--accent); border: 1px solid var(--accent); }
+  .badge-bot { background: rgba(0, 229, 255, 0.16); color: var(--bot); border: 1px solid var(--bot); }
+  .badge-tie { background: rgba(255, 190, 11, 0.16); color: var(--gold); border: 1px solid var(--gold); }
+  .charts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 18px;
+    margin-bottom: 22px;
+  }
+  .chart-box {
+    background: var(--card-alt);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+  }
+  .viewer-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+  select, input[type="range"] {
+    background: var(--card-alt);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 0.86rem;
+    accent-color: var(--accent);
+  }
+  .attempt-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+  .grids-pair {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 18px;
+  }
+  .maze-panel {
+    background: var(--card-alt);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+  }
+  .maze-panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .svg-wrap {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    max-width: 440px;
+    margin: 0 auto 10px;
+    background: #0b1017;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .mini-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    font-size: 0.78rem;
+  }
+  .mini-stat {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 8px;
+  }
+  .mini-stat span { display: block; color: var(--dim); font-size: 0.7rem; }
+  .mini-stat strong { color: #fff; font-size: 0.92rem; }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    font-size: 0.8rem;
+    color: var(--dim);
+    margin-top: 12px;
+  }
+  .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
+  .formula-box {
+    font-size: 0.84rem;
+    color: var(--dim);
+    background: var(--card-alt);
+    padding: 12px 14px;
+    border-radius: 6px;
+    border-left: 3px solid var(--accent);
+    margin-top: 12px;
+  }
+  footer { text-align: center; color: var(--dim); font-size: 0.8rem; margin-top: 16px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>Cognitive Load vs. A* Bot Comparison</h1>
+      <p class="subtitle">Mode 3 Learning Telemetry &amp; Trajectory Analyzer &bull; Human Global Vision vs. Bot 1-Tile Sight</p>
+    </div>
+    <div class="loader-bar">
+      <label class="file-label">
+        Load COGLOAD.CSV
+        <input id="csv-upload" type="file" accept=".csv,text/csv">
+      </label>
+      <button id="reset-btn" type="button" class="btn">Reset Default</button>
+      <span id="dataset-status" class="status-pill"></span>
+    </div>
+  </header>
+
+  <section id="kpi-grid" class="stats-grid" aria-label="Key comparison metrics"></section>
+
+  <div class="charts-grid">
+    <div class="card">
+      <div class="card-title">
+        <span>Learning Curve (Extra Moves per Try)</span>
+        <span id="curve-maze-label" class="subtitle"></span>
+      </div>
+      <div class="chart-box">
+        <svg id="learning-curve-svg" viewBox="0 0 520 260" width="100%" aria-label="Learning curve chart"></svg>
+        <div class="legend" style="margin-top:8px;">
+          <span class="legend-item"><span class="swatch" style="background:#00d26a;"></span> Human Player</span>
+          <span class="legend-item"><span class="swatch" style="background:#00e5ff;"></span> A* Bot</span>
+          <span class="legend-item"><span class="swatch" style="background:#ffbe0b;"></span> Optimal (0 extra)</span>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">
+        <span>Cognitive Load Index (CLI) by Stage</span>
+        <span class="subtitle">Lower CLI = Lower Cognitive Overhead</span>
+      </div>
+      <div class="chart-box">
+        <svg id="stage-cli-svg" viewBox="0 0 520 260" width="100%" aria-label="Stage CLI bar chart"></svg>
+        <div class="legend" style="margin-top:8px;">
+          <span class="legend-item"><span class="swatch" style="background:#00d26a;"></span> Human Mean CLI</span>
+          <span class="legend-item"><span class="swatch" style="background:#00e5ff;"></span> A* Bot Mean CLI</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">
+      <span>Stage-by-Stage Cognitive Load Scaling</span>
+      <span class="subtitle">15&times;15 Visual Span vs. 24&times;24 Clutter vs. 36&times;36 Long Corridors</span>
+    </div>
+    <div tabindex="0" role="region" aria-labelledby="stage-table-cap" class="table-wrapper">
+      <table>
+        <caption id="stage-table-cap" style="text-align:left;padding:8px 12px;color:var(--dim);font-size:0.8rem;">Mean human vs. bot performance grouped by maze stage</caption>
+        <thead>
+          <tr>
+            <th scope="col">Stage</th>
+            <th scope="col">Mazes</th>
+            <th scope="col">Wins (Y/B/T)</th>
+            <th scope="col">Mean Tries (Y vs B)</th>
+            <th scope="col">1st-Try Overhead %</th>
+            <th scope="col">Mean Total Steps</th>
+            <th scope="col">180&deg; Reversals</th>
+            <th scope="col">Revisited Cells</th>
+            <th scope="col">Mean CLI (Y vs B)</th>
+          </tr>
+        </thead>
+        <tbody id="stage-tbody"></tbody>
+      </table>
+    </div>
+    <div class="formula-box">
+      <strong>Composite Cognitive Load Index (CLI)</strong> =
+      <code>25 &times; (attempts - 1) + 100 &times; (total_extra_moves / optimal_moves) + 5 &times; total_reversals + 2 &times; total_revisited_cells</code>.
+      <br>Note: Stage 1 (<code>15&times;15</code>) fits within human visual lookahead; Stage 2 (<code>24&times;24</code>) creates a cognitive clutter crossover where the A* bot's exact memory map dominates; Stage 3 (<code>36&times;36</code>) rewards human global shortcut perception across long corridors.
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">
+      <span>Per-Maze Head-to-Head Results</span>
+      <span class="subtitle">Click any maze row to inspect its trajectories below</span>
+    </div>
+    <div tabindex="0" role="region" aria-labelledby="maze-table-cap" class="table-wrapper">
+      <table>
+        <caption id="maze-table-cap" style="text-align:left;padding:8px 12px;color:var(--dim);font-size:0.8rem;">Head-to-head human vs. computer bot results for every maze</caption>
+        <thead>
+          <tr>
+            <th scope="col">Maze ID</th>
+            <th scope="col">Stage (Grid)</th>
+            <th scope="col">Optimal</th>
+            <th scope="col">Tries (Y / B)</th>
+            <th scope="col">1st-Try Extra (Y / B)</th>
+            <th scope="col">Total Steps (Y / B)</th>
+            <th scope="col">Rev / Back (Y)</th>
+            <th scope="col">Rev / Back (B)</th>
+            <th scope="col">CLI (Y vs B)</th>
+            <th scope="col">Faster Learner</th>
+          </tr>
+        </thead>
+        <tbody id="maze-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">
+      <span>Interactive 2D Maze Trajectory &amp; Backtrack Viewer</span>
+      <span id="viewer-hover-info" class="subtitle">Move slider or click an attempt to inspect path deviations</span>
+    </div>
+    <div class="viewer-controls">
+      <label for="maze-select" class="subtitle">Maze:</label>
+      <select id="maze-select"></select>
+      <div id="attempt-buttons" class="attempt-pills"></div>
+      <button id="ghost-btn" type="button" class="btn active">Prior Tries Ghost: ON</button>
+      <button id="play-btn" type="button" class="btn">Play Steps</button>
+      <input id="step-slider" type="range" min="0" max="100" value="100" aria-label="Step scrub slider">
+      <span id="step-counter" class="subtitle">All steps</span>
+    </div>
+
+    <div class="grids-pair">
+      <div class="maze-panel">
+        <div class="maze-panel-head">
+          <strong class="human-txt">YOU (Global Vision)</strong>
+          <span id="player-try-badge" class="badge badge-player">Try 1</span>
+        </div>
+        <div class="svg-wrap">
+          <svg id="player-grid-svg" viewBox="0 0 360 360" width="100%" height="100%"></svg>
+        </div>
+        <div id="player-mini-stats" class="mini-metrics"></div>
+      </div>
+
+      <div class="maze-panel">
+        <div class="maze-panel-head">
+          <strong class="bot-txt">A* BOT (1-Tile Sight + Memory)</strong>
+          <span id="bot-try-badge" class="badge badge-bot">Try 1</span>
+        </div>
+        <div class="svg-wrap">
+          <svg id="bot-grid-svg" viewBox="0 0 360 360" width="100%" height="100%"></svg>
+        </div>
+        <div id="bot-mini-stats" class="mini-metrics"></div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span class="legend-item"><span class="swatch" style="background:#ffbe0b;"></span> Optimal Corridor</span>
+      <span class="legend-item"><span class="swatch" style="background:#64748b;"></span> Prior Try Ghost</span>
+      <span class="legend-item"><span class="swatch" style="background:#00d26a;"></span> Human Path (On-Optimal)</span>
+      <span class="legend-item"><span class="swatch" style="background:#00e5ff;"></span> Bot Path (On-Optimal)</span>
+      <span class="legend-item"><span class="swatch" style="background:#ff5964;"></span> Off-Optimal Excursion</span>
+      <span class="legend-item"><span class="swatch" style="background:#ff2e93;border-radius:50%;"></span> 180&deg; Reversal Turnaround</span>
+    </div>
+  </div>
+
+  <footer>MASM Maze Mode 3 Cognitive Load Analyzer &bull; Synced with Code/COGLOAD.CSV &amp; MAZE.ASM</footer>
+</div>
+
+<script>
+const INITIAL_DATA = {"source_csv":"COGLOAD.CSV","maze_count":6,"total_attempt_rows":29,"all_winners_verified":true,"stages":[{"label":"Stage 1 (15x15)","stage":1,"grid_size":"15x15","maze_count":3,"wins":{"player":2,"computer":1,"tie":0},"player":{"count":3,"mean_attempts":2.0,"mean_first_try_extra":6.0,"mean_first_try_subopt_pct":24.33,"mean_total_steps":55.67,"mean_total_extra_moves":6.67,"mean_reversals":2.0,"mean_revisited_cells":3.67,"mean_off_optimal_steps":4.67,"mean_load_index":69.33},"computer":{"count":3,"mean_attempts":2.33,"mean_first_try_extra":7.33,"mean_first_try_subopt_pct":30.22,"mean_total_steps":65.33,"mean_total_extra_moves":8.67,"mean_reversals":2.0,"mean_revisited_cells":4.0,"mean_off_optimal_steps":15.33,"mean_load_index":87.11}},{"label":"Stage 2 (24x24)","stage":2,"grid_size":"24x24","maze_count":2,"wins":{"player":0,"computer":2,"tie":0},"player":{"count":2,"mean_attempts":3.0,"mean_first_try_extra":15.0,"mean_first_try_subopt_pct":27.48,"mean_total_steps":183.5,"mean_total_extra_moves":17.0,"mean_reversals":3.0,"mean_revisited_cells":6.5,"mean_off_optimal_steps":50.5,"mean_load_index":109.12},"computer":{"count":2,"mean_attempts":1.5,"mean_first_try_extra":17.0,"mean_first_try_subopt_pct":34.0,"mean_total_steps":97.5,"mean_total_extra_moves":17.0,"mean_reversals":1.5,"mean_revisited_cells":6.0,"mean_off_optimal_steps":36.5,"mean_load_index":66.0}},{"label":"Stage 3 (36x36)","stage":3,"grid_size":"36x36","maze_count":1,"wins":{"player":1,"computer":0,"tie":0},"player":{"count":1,"mean_attempts":3.0,"mean_first_try_extra":16.0,"mean_first_try_subopt_pct":20.51,"mean_total_steps":254.0,"mean_total_extra_moves":20.0,"mean_reversals":5.0,"mean_revisited_cells":14.0,"mean_off_optimal_steps":12.0,"mean_load_index":128.64},"computer":{"count":1,"mean_attempts":4.0,"mean_first_try_extra":16.0,"mean_first_try_subopt_pct":20.51,"mean_total_steps":340.0,"mean_total_extra_moves":28.0,"mean_reversals":6.0,"mean_revisited_cells":19.0,"mean_off_optimal_steps":11.0,"mean_load_index":178.9}}],"overall":{"label":"Overall (All Stages)","stage":0,"grid_size":"All","maze_count":6,"wins":{"player":3,"computer":3,"tie":0},"player":{"count":6,"mean_attempts":2.5,"mean_first_try_extra":10.67,"mean_first_try_subopt_pct":24.74,"mean_total_steps":131.33,"mean_total_extra_moves":12.33,"mean_reversals":2.83,"mean_revisited_cells":6.33,"mean_off_optimal_steps":21.17,"mean_load_index":92.48},"computer":{"count":6,"mean_attempts":2.33,"mean_first_try_extra":12.0,"mean_first_try_subopt_pct":29.86,"mean_total_steps":121.83,"mean_total_extra_moves":14.67,"mean_reversals":2.5,"mean_revisited_cells":7.17,"mean_off_optimal_steps":21.67,"mean_load_index":95.37}},"mazes":[{"maze_id":19482,"stage":1,"grid_size":"15x15","grid_n":15,"optimal_moves":24,"exit_coord":[13,13],"csv_player_attempts":2,"csv_comp_attempts":3,"csv_faster_learner":"player","computed_winner":"player","winner_matches_studycmp":true,"lower_cli_runner":"player","runners":{"player":{"attempts":2,"first_try_moves":30,"first_try_extra":6,"first_try_suboptimality_pct":25.0,"total_steps":54,"total_extra_moves":6,"total_reversals":3,"total_turns":10,"total_revisited_cells":4,"total_off_optimal_steps":3,"learning_decay_rate":6.0,"mean_efficiency_pct":90.0,"load_index":73.0,"attempt_records":[{"runner":"player","attempt_no":1,"num_moves":30,"extra_moves":6,"is_optimal":0,"efficiency_pct":80.0,"reversals":3,"turns":5,"revisited_cells":4,"reversal_steps":[8,9,26],"reversal_coords":[[4,5],[4,4],[8,13]],"coords":[[1,1],[1,2],[1,3],[2,3],[3,3],[4,3],[4,4],[4,5],[4,4],[4,5],[4,6],[5,6],[6,6],[7,6],[8,6],[9,6],[10,6],[10,7],[10,8],[10,9],[10,10],[10,11],[10,12],[10,13],[9,13],[8,13],[9,13],[10,13],[11,13],[12,13],[13,13]],"moves":"RRDDDRRLRRDDDDDDRRRRRRRUUDDDDD","off_optimal_steps":3,"off_optimal_unique_cells":2},{"runner":"player","attempt_no":2,"num_moves":24,"extra_moves":0,"is_optimal":1,"efficiency_pct":100.0,"reversals":0,"turns":5,"revisited_cells":0,"reversal_steps":[],"reversal_coords":[],"coords":[[1,1],[1,2],[1,3],[2,3],[3,3],[4,3],[4,4],[4,5],[4,6],[5,6],[6,6],[7,6],[8,6],[9,6],[10,6],[10,7],[10,8],[10,9],[10,10],[10,11],[10,12],[10,13],[11,13],[12,13],[13,13]],"moves":"RRDDDRRRDDDDDDRRRRRRRDDD","off_optimal_steps":0,"off_optimal_unique_cells":0}]},"computer":{"attempts":3,"first_try_moves":36,"first_try_extra":12,"first_try_suboptimality_pct":50.0,"total_steps":88,"total_extra_moves":16,"total_reversals":6,"total_turns":15,"total_revisited_cells":12,"total_off_optimal_steps":19,"learning_decay_rate":6.0,"mean_efficiency_pct":84.13,"load_index":170.67,"attempt_records":[{"runner":"computer","attempt_no":1,"num_moves":36,"extra_moves":12,"is_optimal":0,"efficiency_pct":66.67,"reversals":4,"turns":5,"revisited_cells":8,"reversal_steps":[11,22,24,30],"reversal_coords":[[2,6],[8,11],[8,9],[6,13]],"coords":[[1,1],[1,2],[1,3],[2,3],[3,3],[4,3],[4,4],[4,5],[4,6],[3,6],[2,6],[3,6],[4,6],[5,6],[6,6],[7,6],[8,6],[8,7],[8,8],[8,9],[8,10],[8,11],[8,10],[8,9],[8,10],[8,11],[8,12],[8,13],[7,13],[6,13],[7,13],[8,13],[9,13],[10,13],[11,13],[12,13],[13,13]],"moves":"RRDDDRRRUUDDDDDDRRRRRLLRRRRUUDDDDDDD","off_optimal_steps":19,"off_optimal_unique_cells":12},{"runner":"computer","attempt_no":2,"num_moves":28,"extra_moves":4,"is_optimal":0,"efficiency_pct":85.71,"reversals":2,"turns":5,"revisited_cells":4,"reversal_steps":[22,24],"reversal_coords":[[10,13],[10,11]],"coords":[[1,1],[1,2],[1,3],[2,3],[3,3],[4,3],[4,4],[4,5],[4,6],[5,6],[6,6],[7,6],[8,6],[9,6],[10,6],[10,7],[10,8],[10,9],[10,10],[10,11],[10,12],[10,13],[10,12],[10,11],[10,12],[10,13],[11,13],[12,13],[13,13]],"moves":"RRDDDRRRDDDDDDRRRRRRRLLRRDDD","off_optimal_steps":0,"off_optimal_unique_cells":0},{"runner":"computer","attempt_no":3,"num_moves":24,"extra_moves":0,"is_optimal":1,"efficiency_pct":100.0,"reversals":0,"turns":5,"revisited_cells":0,"reversal_steps":[],"reversal_coords":[],"coords":[[1,1],[1,2],[1,3],[2,3],[3,3],[4,3],[4,4],[4,5],[4,6],[5,6],[6,6],[7,6],[8,6],[9,6],[10,6],[10,7],[10,8],[10,9],[10,10],[10,11],[10,12],[10,13],[11,13],[12,13],[13,13]],"moves":"RRDDDRRRDDDDDDRRRRRRRDDD","off_optimal_steps":0,"off_optimal_unique_cells":0}]}},"optimal_paths":{"player":[[1,1],[1,2],[1,3],[2,3],[3,3],[4,3],[4,4],[4,5],[4,6],[5,6],[6,6],[7,6],[8,6],[9,6],[10,6],[10,7],[10,8],[10,9],[10,10],[10,11],[10,12],[10,13],[11,13],[12,13],[13,13]],"computer":[[1,1],[1,2],[1,3],[2,3],[3,3],[4,3],[4,4],[4,5],[4,6],[5,6],[6,6],[7,6],[8,6],[9,6],[10,6],[10,7],[10,8],[10,9],[10,10],[10,11],[10,12],[10,13],[11,13],[12,13],[13,13]]}},{"maze_id":38353,"stage":1,"grid_size":"15x15","grid_n":15,"optimal_moves":25,"exit_coord":[12,13],"csv_player_attempts":3,"csv_comp_attempts":2,"csv_faster_learner":"computer","computed_winner":"computer","winner_matches_studycmp":true,"lower_cli_runner":"computer","runners":{"player":{"attempts":3,"first_try_moves":37,"first_try_extra":12,"first_try_suboptimality_pct":48.0,"total_steps":89,"total_extra_moves":14,"total_reversals":3,"total_turns":44,"total_revisited_cells":7,"total_off_optimal_steps":11,"learning_decay_rate":6.0,"mean_efficiency_pct":86.72,"load_index":135.0,"attempt_records":[{"runner":"player","attempt_no":1,"num_moves":37,"extra_moves":12,"is_optimal":0,"efficiency_pct":67.57,"reversals":2,"turns":20,"revisited_cells":6,"reversal_steps":[6,14],"reversal_coords":[[4,1],[3,6]],"coords":[[1,1],[1,2],[2,2],[3,2],[4,2],[4,1],[4,2],[4,3],[5,3],[5,4],[5,5],[4,5],[4,6],[3,6],[4,6],[4,5],[5,5],[5,4],[5,3],[6,3],[7,3],[8,3],[9,3],[9,4],[10,4],[10,5],[10,6],[10,7],[11,7],[12,7],[12,8],[12,9],[12,10],[13,10],[13,11],[13,12],[12,12],[12,13]],"moves":"RDDDLRRDRRURUDLDLLDDDDRDRRRDDRRRDRRUR","off_optimal_steps":10,"off_optimal_unique_cells":6},{"runner":"player","attempt_no":2,"num_moves":27,"extra_moves":2,"is_optimal":0,"efficiency_pct":92.59,"reversals":1,"turns":12,"revisited_cells":1,"reversal_steps":[6],"reversal_coords":[[4,1]],"coords":[[1,1],[1,2],[2,2],[3,2],[4,2],[4,1],[4,2],[4,3],[5,3],[6,3],[7,3],[8,3],[9,3],[9,4],[10,4],[10,5],[10,6],[10,7],[11,7],[12,7],[12,8],[12,9],[12,10],[13,10],[13,11],[13,12],[12,12],[12,13]],"moves":"RDDDLRRDDDDDRDRRRDDRRRDRRUR","off_optimal_steps":1,"off_optimal_unique_cells":1},{"runner":"player","attempt_no":3,"num_moves":25,"extra_moves":0,"is_optimal":1,"efficiency_pct":100.0,"reversals":0,"turns":12,"revisited_cells":0,"reversal_steps":[],"reversal_coords":[],"coords":[[1,1],[1,2],[2,2],[3,2],[4,2],[4,3],[5,3],[6,3],[7,3],[8,3],[9,3],[9,4],[10,4],[10,5],[10,6],[10,7],[11,7],[12,7],[12,8],[12,9],[12,10],[13,10],[13,11],[13,12],[12,12],[12,13]],"moves":"RDDDRDDDDDRDRRRDDRRRDRRUR","off_optimal_steps":0,"off_optimal_unique_cells":0}]},"computer":{"attempts":2,"first_try_moves":31,"first_try_extra":6,"first_try_suboptimality_pct":24.0,"total_steps":56,"total_extra_moves":6,"total_reversals":0,"total_turns":24,"total_revisited_cells":0,"total_off_optimal_steps":10,"learning_decay_rate":6.0,"mean_efficiency_pct":90.33,"load_index":49.0,"attempt_records":[{"runner":"computer","attempt_no":1,"num_moves":31,"extra_moves":6,"is_optimal":0,"efficiency_pct":80.65,"reversals":0,"turns":14,"revisited_cells":0,"reversal_steps":[],"reversal_coords":[],"coords":[[1,1],[1,2],[1,3],[1,4],[1,5],[2,5],[2,6],[3,6],[4,6],[4,5],[5,5],[5,4],[5,3],[6,3],[7,3],[7,4],[7,5],[7,6],[7,7],[7,8],[8,8],[9,8],[9,9],[9,10],[10,10],[11,10],[12,10],[13,10],[13,11],[13,12],[12,12],[12,13]],"moves":"RRRRDRDDLDLLDDRRRRRDDRRDDDDRRUR","off_optimal_steps":10,"off_optimal_unique_cells":10},{"runner":"computer","attempt_no":2,"num_moves":25,"extra_moves":0,"is_optimal":1,"efficiency_pct":100.0,"reversals":0,"turns":10,"revisited_cells":0,"reversal_steps":[],"reversal_coords":[],"coords":[[1,1],[1,2],[2,2],[3,2],[4,2],[4,3],[5,3],[6,3],[7,3],[7,4],[7,5],[7,6],[7,7],[7,8],[8,8],[9,8],[9,9],[9,10],[10,10],[11,10],[12,10],[13,10],[13,11],[13,12],[12,12],[12,13]],"moves":"RDDDRDDDRRRRRDDRRDDDDRRUR","off_optimal_steps":0,"off_optimal_unique_cells":0}]}},"optimal_paths":{"player":[[1,1],[1,2],[2,2],[3,2],[4,2],[4,3],[5,3],[6,3],[7,3],[8,3],[9,3],[9,4],[10,4],[10,5],[10,6],[10,7],[11,7],[12,7],[12,8],[12,9],[12,10],[13,10],[13,11],[13,12],[12,12],[12,13]],"computer":[[1,1],[1,2],[2,2],[3,2],[4,2],[4,3],[5,3],[6,3],[7,3],[7,4],[7,5],[7,6],[7,7],[7,8],[8,8],[9,8],[9,9],[9,10],[10,10],[11,10],[12,10],[13,10],[13,11],[13,12],[12,12],[12,13]]}},{"maze_id":53949,"stage":2,"grid_size":"24x24","grid_n":24,"optimal_moves":61,"exit_coord":[21,22],"csv_player_attempts":3,"csv_comp_attempts":1,"csv_faster_learner":"computer","computed_winner":"computer","winner_matches_studycmp":true,"lower_cli_runner":"computer","runners":{"player":{"attempts":3,"first_try_moves":75,"first_try_extra":14,"first_try_suboptimality_pct":22.95,"total_steps":199,"total_extra_moves":16,"total_reversals":4,"total_turns":85,"total_revisited_cells":10,"total_off_optimal_steps":12,"learning_decay_rate":7.0,"mean_efficiency_pct":92.72,"load_index":116.23,"attempt_records":[{"runner":"player","attempt_no":1,"num_moves":75,"extra_moves":14,"is_optimal":0,"efficiency_pct":81.33,"reversals":3,"turns":31,"revisited_cells":9,"reversal_steps":[5,15,25],"reversal_coords":[[3,1],[5,1],[5,1]],"coords":[[1,1],[1,2],[2,2],[3,2],[3,1],[3,2],[3,3],[3,4],[4,4],[5,4],[5,3],[6,3],[6,2],[6,1],[5,1],[6,1],[6,2],[6,3],[7,3],[8,3],[8,2],[8,1],[7,1],[6,1],[5,1],[6,1],[7,1],[8,1],[9,1],[10,1],[10,2],[10,3],[10,4],[10,5],[9,5],[9,6],[8,6],[7,6],[6,6],[6,7],[5,7],[5,8],[5,9],[5,10],[6,10],[7,10],[7,11],[7,12],[7,13],[7,14],[7,15],[8,15],[9,15],[10,15],[11,15],[11,16],[11,17],[11,18],[11,19],[12,19],[13,19],[13,20],[13,21],[13,22],[14,22],[15,22],[15,21],[15,20],[16,20],[17,20],[17,21],[18,21],[18,22],[19,22],[20,22],[21,22]],"moves":"RDDLRRRDDLDLLUDRRDDLLUUUDDDDDRRRRURUUURURRRDDRRRRRDDDDRRRRDDRRRDDLLDDRDRDDD","off_optimal_steps":11,"off_optimal_unique_cells":5},{"runner":"player","attempt_no":2,"num_moves":63,"extra_moves":2,"is_optimal":0,"efficiency_pct":96.83,"reversals":1,"turns":27,"revisited_cells":1,"reversal_steps":[5],"reversal_coords":[[3,1]],"coords":[[1,1],[1,2],[2,2],[3,2],[3,1],[3,2],[3,3],[3,4],[4,4],[5,4],[5,3],[6,3],[7,3],[8,3],[8,2],[8,1],[9,1],[10,1],[10,2],[10,3],[10,4],[10,5],[9,5],[9,6],[8,6],[7,6],[6,6],[6,7],[5,7],[5,8],[5,9],[5,10],[6,10],[7,10],[7,11],[7,12],[7,13],[7,14],[7,15],[8,15],[9,15],[10,15],[11,15],[11,16],[11,17],[11,18],[11,19],[12,19],[13,19],[13,20],[13,21],[13,22],[14,22],[15,22],[15,21],[15,20],[16,20],[17,20],[17,21],[18,21],[18,22],[19,22],[20,22],[21,22]],"moves":"RDDLRRRDDLDDDLLDDRRRRURUUURURRRDDRRRRRDDDDRRRRDDRRRDDLLDDRDRDDD","off_optimal_steps":1,"off_optimal_unique_cells":1},{"runner":"player","attempt_no":3,"num_moves":61,"extra_moves":0,"is_optimal":1,"efficiency_pct":100.0,"reversals":0,"turns":27,"revisited_cells":0,"reversal_steps":[],"reversal_coords":[],"coords":[[1,1],[1,2],[2,2],[3,2],[3,3],[3,4],[4,4],[5,4],[5,3],[6,3],[7,3],[8,3],[8,2],[8,1],[9,1],[10,1],[10,2],[10,3],[10,4],[10,5],[9,5],[9,6],[8,6],[7,6],[6,6],[6,7],[5,7],[5,8],[5,9],[5,10],[6,10],[7,10],[7,11],[7,12],[7,13],[7,14],[7,15],[8,15],[9,15],[10,15],[11,15],[11,16],[11,17],[11,18],[11,19],[12,19],[13,19],[13,20],[13,21],[13,22],[14,22],[15,22],[15,21],[15,20],[16,20],[17,20],[17,21],[18,21],[18,22],[19,22],[20,22],[21,22]],"moves":"RDDRRDDLDDDLLDDRRRRURUUURURRRDDRRRRRDDDDRRRRDDRRRDDLLDDRDRDDD","off_optimal_steps":0,"off_optimal_unique_cells":0}]},"computer":{"attempts":1,"first_try_moves":61,"first_try_extra":0,"first_try_suboptimality_pct":0.0,"total_steps":61,"total_extra_moves":0,"total_reversals":0,"total_turns":27,"total_revisited_cells":0,"total_off_optimal_steps":0,"learning_decay_rate":0.0,"mean_efficiency_pct":100.0,"load_index":0.0,"attempt_records":[{"runner":"computer","attempt_no":1,"num_moves":61,"extra_moves":0,"is_optimal":1,"efficiency_pct":100.0,"reversals":0,"turns":27,"revisited_cells":0,"reversal_steps":[],"reversal_coords":[],"coords":[[1,1],[1,2],[2,2],[3,2],[3,3],[3,4],[4,4],[5,4],[5,3],[6,3],[7,3],[8,3],[8,2],[8,1],[9,1],[10,1],[10,2],[10,3],[10,4],[10,5],[9,5],[9,6],[8,6],[7,6],[6,6],[6,7],[5,7],[5,8],[5,9],[5,10],[5,11],[5,12],[5,13],[5,14],[6,14],[7,14],[7,15],[8,15],[9,15],[10,15],[11,15],[11,16],[11,17],[11,18],[11,19],[12,19],[13,19],[13,20],[13,21],[13,22],[14,22],[15,22],[15,21],[15,20],[16,20],[17,20],[17,21],[18,21],[18,22],[19,22],[20,22],[21,22]],"moves":"RDDRRDDLDDDLLDDRRRRURUUURURRRRRRRDDRDDDDRRRRDDRRRDDLLDDRDRDDD","off_optimal_steps":0,"off_optimal_unique_cells":0}]}},"optimal_paths":{"player":[[1,1],[1,2],[2,2],[3,2],[3,3],[3,4],[4,4],[5,4],[5,3],[6,3],[7,3],[8,3],[8,2],[8,1],[9,1],[10,1],[10,2],[10,3],[10,4],[10,5],[9,5],[9,6],[8,6],[7,6],[6,6],[6,7],[5,7],[5,8],[5,9],[5,10],[6,10],[7,10],[7,11],[7,12],[7,13],[7,14],[7,15],[8,15],[9,15],[10,15],[11,15],[11,16],[11,17],[11,18],[11,19],[12,19],[13,19],[13,20],[13,21],[13,22],[14,22],[15,22],[15,21],[15,20],[16,20],[17,20],[17,21],[18,21],[18,22],[19,22],[20,22],[21,22]],"computer":[[1,1],[1,2],[2,2],[3,2],[3,3],[3,4],[4,4],[5,4],[5,3],[6,3],[7,3],[8,3],[8,2],[8,1],[9,1],[10,1],[10,2],[10,3],[10,4],[10,5],[9,5],[9,6],[8,6],[7,6],[6,6],[6,7],[5,7],[5,8],[5,9],[5,10],[5,11],[5,12],[5,13],[5,14],[6,14],[7,14],[7,15],[8,15],[9,15],[10,15],[11,15],[11,16],[11,17],[11,18],[11,19],[12,19],[13,19],[13,20],[13,21],[13,22],[14,22],[15,22],[15,21],[15,20],[16,20],[17,20],[17,21],[18,21],[18,22],[19,22],[20,22],[21,22]]}},{"maze_id":41892,"stage":3,"grid_size":"36x36","grid_n":36,"optimal_moves":78,"exit_coord":[34,34],"csv_player_attempts":3,"csv_comp_attempts":4,"csv_faster_learner":"player","computed_winner":"player","winner_matches_studycmp":true,"lower_cli_runner":"player","runners":{"player":{"attempts":3,"first_try_moves":94,"first_try_extra":16,"first_try_suboptimality_pct":20.51,"total_steps":254,"total_extra_moves":20,"total_reversals":5,"total_turns":48,"total_revisited_cells":14,"total_off_optimal_steps":12,"learning_decay_rate":8.0,"mean_efficiency_pct":92.7,"load_index":128.64,"attempt_records":[{"runner":"player","attempt_no":1,"num_moves":94,"extra_moves":16,"is_optimal":0,"efficiency_pct":82.98,"reversals":3,"turns":20,"revisited_cells":10,"reversal_steps":[9,91,93],"reversal_coords":[[3,3],[34,34],[34,32]],"coords":[[1,1],[1,2],[1,3],[1,4],[1,5],[2,5],[3,5],[3,4],[3,3],[3,4],[3,5],[4,5],[5,5],[6,5],[7,5],[8,5],[9,5],[9,6],[9,7],[9,8],[9,9],[9,10],[9,11],[8,11],[7,11],[7,10],[7,9],[8,9],[9,9],[10,9],[10,10],[10,11],[9,11],[8,11],[7,11],[7,12],[7,13],[7,14],[7,15],[7,16],[8,16],[9,16],[10,16],[11,16],[12,16],[13,16],[13,17],[13,18],[13,19],[13,20],[13,21],[13,22],[14,22],[15,22],[16,22],[17,22],[18,22],[19,22],[19,21],[19,20],[19,19],[20,19],[21,19],[22,19],[23,19],[24,19],[25,19],[25,20],[25,21],[25,22],[25,23],[25,24],[25,25],[25,26],[26,26],[27,26],[28,26],[28,27],[28,28],[28,29],[28,30],[28,31],[28,32],[29,32],[30,32],[31,32],[32,32],[33,32],[34,32],[34,33],[34,34],[34,33],[34,32],[34,33],[34,34]],"moves":"RRRRDDLLRRDDDDDDRRRRRRUULLDDDRRUUURRRRRDDDDDDRRRRRRDDDDDDLLLDDDDDDRRRRRRRDDDRRRRRRDDDDDDRRLLRR","off_optimal_steps":12,"off_optimal_unique_cells":10},{"runner":"player","attempt_no":2,"num_moves":82,"extra_moves":4,"is_optimal":0,"efficiency_pct":95.12,"reversals":2,"turns":14,"revisited_cells":4,"reversal_steps":[79,81],"reversal_coords":[[34,34],[34,32]],"coords":[[1,1],[1,2],[1,3],[1,4],[1,5],[2,5],[3,5],[4,5],[5,5],[6,5],[7,5],[8,5],[9,5],[10,5],[10,6],[10,7],[10,8],[10,9],[10,10],[10,11],[9,11],[8,11],[7,11],[7,12],[7,13],[7,14],[7,15],[7,16],[8,16],[9,16],[10,16],[11,16],[12,16],[13,16],[13,17],[13,18],[13,19],[13,20],[13,21],[13,22],[14,22],[15,22],[16,22],[17,22],[18,22],[19,22],[19,21],[19,20],[19,19],[20,19],[21,19],[22,19],[23,19],[24,19],[25,19],[25,20],[25,21],[25,22],[25,23],[25,24],[25,25],[25,26],[26,26],[27,26],[28,26],[28,27],[28,28],[28,29],[28,30],[28,31],[28,32],[29,32],[30,32],[31,32],[32,32],[33,32],[34,32],[34,33],[34,34],[34,33],[34,32],[34,33],[34,34]],"moves":"RRRRDDDDDDDDDRRRRRRUUURRRRRDDDDDDRRRRRRDDDDDDLLLDDDDDDRRRRRRRDDDRRRRRRDDDDDDRRLLRR","off_optimal_steps":0,"off_optimal_unique_cells":0},{"runner":"player","attempt_no":3,"num_moves":78,"extra_moves":0,"is_optimal":1,"efficiency_pct":100.0,"reversals":0,"turns":14,"revisited_cells":0,"reversal_steps":[],"reversal_coords":[],"coords":[[1,1],[1,2],[1,3],[1,4],[1,5],[2,5],[3,5],[4,5],[5,5],[6,5],[7,5],[8,5],[9,5],[10,5],[10,6],[10,7],[10,8],[10,9],[10,10],[10,11],[9,11],[8,11],[7,11],[7,12],[7,13],[7,14],[7,15],[7,16],[8,16],[9,16],[10,16],[11,16],[12,16],[13,16],[13,17],[13,18],[13,19],[13,20],[13,21],[13,22],[14,22],[15,22],[16,22],[17,22],[18,22],[19,22],[19,21],[19,20],[19,19],[20,19],[21,19],[22,19],[23,19],[24,19],[25,19],[25,20],[25,21],[25,22],[25,23],[25,24],[25,25],[25,26],[26,26],[27,26],[28,26],[28,27],[28,28],[28,29],[28,30],[28,31],[28,32],[29,32],[30,32],[31,32],[32,32],[33,32],[34,32],[34,33],[34,34]],"moves":"RRRRDDDDDDDDDRRRRRRUUURRRRRDDDDDDRRRRRRDDDDDDLLLDDDDDDRRRRRRRDDDRRRRRRDDDDDDRR","off_optimal_steps":0,"off_optimal_unique_cells":0}]},"computer":{"attempts":4,"first_try_moves":94,"first_try_extra":16,"first_try_suboptimality_pct":20.51,"total_steps":340,"total_extra_moves":28,"total_reversals":6,"total_turns":64,"total_revisited_cells":19,"total_off_optimal_steps":11,"learning_decay_rate":5.33,"mean_efficiency_pct":92.2,"load_index":178.9,"attempt_records":[{"runner":"computer","attempt_no":1,"num_moves":94,"extra_moves":16,"is_optimal":0,"efficiency_pct":82.98,"reversals":2,"turns":20,"revisited_cells":9,"reversal_steps":[89,93],"reversal_coords":[[32,34],[34,32]],"coords":[[1,1],[1,2],[1,3],[1,4],[1,5],[2,5],[3,5],[4,5],[5,5],[6,5],[7,5],[7,6],[7,7],[6,7],[5,7],[5,6],[5,5],[6,5],[7,5],[8,5],[9,5],[10,5],[10,6],[10,7],[10,8],[10,9],[10,10],[10,11],[9,11],[8,11],[7,11],[7,12],[7,13],[7,14],[7,15],[7,16],[8,16],[9,16],[10,16],[11,16],[12,16],[13,16],[13,17],[13,18],[13,19],[13,20],[13,21],[13,22],[14,22],[15,22],[16,22],[17,22],[18,22],[19,22],[19,21],[19,20],[19,19],[20,19],[21,19],[22,19],[23,19],[24,19],[25,19],[25,20],[25,21],[25,22],[25,23],[25,24],[25,25],[25,26],[26,26],[27,26],[28,26],[28,27],[28,28],[28,29],[28,30],[28,31],[28,32],[29,32],[30,32],[31,32],[32,32],[33,32],[34,32],[34,33],[34,34],[33,34],[32,34],[33,34],[34,34],[34,33],[34,32],[34,33],[34,34]],"moves":"RRRRDDDDDDRRUULLDDDDDRRRRRRUUURRRRRDDDDDDRRRRRRDDDDDDLLLDDDDDDRRRRRRRDDDRRRRRRDDDDDDRRUUDDLLRR","off_optimal_steps":8,"off_optimal_unique_cells":7},{"runner":"computer","attempt_no":2,"num_moves":86,"extra_moves":8,"is_optimal":0,"efficiency_pct":90.7,"reversals":2,"turns":16,"revisited_cells":6,"reversal_steps":[81,85],"reversal_coords":[[32,34],[34,32]],"coords":[[1,1],[1,2],[1,3],[1,4],[1,5],[2,5],[3,5],[4,5],[5,5],[6,5],[7,5],[8,5],[9,5],[10,5],[10,6],[10,7],[10,8],[10,9],[10,10],[10,11],[9,11],[8,11],[7,11],[7,12],[7,13],[7,14],[7,15],[7,16],[8,16],[9,16],[10,16],[11,16],[12,16],[13,16],[13,17],[13,18],[13,19],[13,20],[13,21],[13,22],[14,22],[15,22],[16,22],[17,22],[18,22],[19,22],[19,21],[19,20],[19,19],[20,19],[21,19],[22,19],[23,19],[24,19],[25,19],[25,20],[25,21],[25,22],[25,23],[25,24],[25,25],[25,26],[26,26],[27,26],[28,26],[28,27],[28,28],[28,29],[28,30],[28,31],[28,32],[29,32],[30,32],[31,32],[32,32],[33,32],[34,32],[34,33],[34,34],[33,34],[32,34],[33,34],[34,34],[34,33],[34,32],[34,33],[34,34]],"moves":"RRRRDDDDDDDDDRRRRRRUUURRRRRDDDDDDRRRRRRDDDDDDLLLDDDDDDRRRRRRRDDDRRRRRRDDDDDDRRUUDDLLRR","off_optimal_steps":3,"off_optimal_unique_cells":2},{"runner":"computer","attempt_no":3,"num_moves":82,"extra_moves":4,"is_optimal":0,"efficiency_pct":95.12,"reversals":2,"turns":14,"revisited_cells":4,"reversal_steps":[79,81],"reversal_coords":[[34,34],[34,32]],"coords":[[1,1],[1,2],[1,3],[1,4],[1,5],[2,5],[3,5],[4,5],[5,5],[6,5],[7,5],[8,5],[9,5],[10,5],[10,6],[10,7],[10,8],[10,9],[10,10],[10,11],[9,11],[8,11],[7,11],[7,12],[7,13],[7,14],[7,15],[7,16],[8,16],[9,16],[10,16],[11,16],[12,16],[13,16],[13,17],[13,18],[13,19],[13,20],[13,21],[13,22],[14,22],[15,22],[16,22],[17,22],[18,22],[19,22],[19,21],[19,20],[19,19],[20,19],[21,19],[22,19],[23,19],[24,19],[25,19],[25,20],[25,21],[25,22],[25,23],[25,24],[25,25],[25,26],[26,26],[27,26],[28,26],[28,27],[28,28],[28,29],[28,30],[28,31],[28,32],[29,32],[30,32],[31,32],[32,32],[33,32],[34,32],[34,33],[34,34],[34,33],[34,32],[34,33],[34,34]],"moves":"RRRRDDDDDDDDDRRRRRRUUURRRRRDDDDDDRRRRRRDDDDDDLLLDDDDDDRRRRRRRDDDRRRRRRDDDDDDRRLLRR","off_optimal_steps":0,"off_optimal_unique_cells":0},{"runner":"computer","attempt_no":4,"num_moves":78,"extra_moves":0,"is_optimal":1,"efficiency_pct":100.0,"reversals":0,"turns":14,"revisited_cells":0,"reversal_steps":[],"reversal_coords":[],"coords":[[1,1],[1,2],[1,3],[1,4],[1,5],[2,5],[3,5],[4,5],[5,5],[6,5],[7,5],[8,5],[9,5],[10,5],[10,6],[10,7],[10,8],[10,9],[10,10],[10,11],[9,11],[8,11],[7,11],[7,12],[7,13],[7,14],[7,15],[7,16],[8,16],[9,16],[10,16],[11,16],[12,16],[13,16],[13,17],[13,18],[13,19],[13,20],[13,21],[13,22],[14,22],[15,22],[16,22],[17,22],[18,22],[19,22],[19,21],[19,20],[19,19],[20,19],[21,19],[22,19],[23,19],[24,19],[25,19],[25,20],[25,21],[25,22],[25,23],[25,24],[25,25],[25,26],[26,26],[27,26],[28,26],[28,27],[28,28],[28,29],[28,30],[28,31],[28,32],[29,32],[30,32],[31,32],[32,32],[33,32],[34,32],[34,33],[34,34]],"moves":"RRRRDDDDDDDDDRRRRRRUUURRRRRDDDDDDRRRRRRDDDDDDLLLDDDDDDRRRRRRRDDDRRRRRRDDDDDDRR","off_optimal_steps":0,"off_optimal_unique_cells":0}]}},"optimal_paths":{"player":[[1,1],[1,2],[1,3],[1,4],[1,5],[2,5],[3,5],[4,5],[5,5],[6,5],[7,5],[8,5],[9,5],[10,5],[10,6],[10,7],[10,8],[10,9],[10,10],[10,11],[9,11],[8,11],[7,11],[7,12],[7,13],[7,14],[7,15],[7,16],[8,16],[9,16],[10,16],[11,16],[12,16],[13,16],[13,17],[13,18],[13,19],[13,20],[13,21],[13,22],[14,22],[15,22],[16,22],[17,22],[18,22],[19,22],[19,21],[19,20],[19,19],[20,19],[21,19],[22,19],[23,19],[24,19],[25,19],[25,20],[25,21],[25,22],[25,23],[25,24],[25,25],[25,26],[26,26],[27,26],[28,26],[28,27],[28,28],[28,29],[28,30],[28,31],[28,32],[29,32],[30,32],[31,32],[32,32],[33,32],[34,32],[34,33],[34,34]],"computer":[[1,1],[1,2],[1,3],[1,4],[1,5],[2,5],[3,5],[4,5],[5,5],[6,5],[7,5],[8,5],[9,5],[10,5],[10,6],[10,7],[10,8],[10,9],[10,10],[10,11],[9,11],[8,11],[7,11],[7,12],[7,13],[7,14],[7,15],[7,16],[8,16],[9,16],[10,16],[11,16],[12,16],[13,16],[13,17],[13,18],[13,19],[13,20],[13,21],[13,22],[14,22],[15,22],[16,22],[17,22],[18,22],[19,22],[19,21],[19,20],[19,19],[20,19],[21,19],[22,19],[23,19],[24,19],[25,19],[25,20],[25,21],[25,22],[25,23],[25,24],[25,25],[25,26],[26,26],[27,26],[28,26],[28,27],[28,28],[28,29],[28,30],[28,31],[28,32],[29,32],[30,32],[31,32],[32,32],[33,32],[34,32],[34,33],[34,34]]}},{"maze_id":5325,"stage":1,"grid_size":"15x15","grid_n":15,"optimal_moves":24,"exit_coord":[13,13],"csv_player_attempts":1,"csv_comp_attempts":2,"csv_faster_learner":"player","computed_winner":"player","winner_matches_studycmp":true,"lower_cli_runner":"player","runners":{"player":{"attempts":1,"first_try_moves":24,"first_try_extra":0,"first_try_suboptimality_pct":0.0,"total_steps":24,"total_extra_moves":0,"total_reversals":0,"total_turns":7,"total_revisited_cells":0,"total_off_optimal_steps":0,"learning_decay_rate":0.0,"mean_efficiency_pct":100.0,"load_index":0.0,"attempt_records":[{"runner":"player","attempt_no":1,"num_moves":24,"extra_moves":0,"is_optimal":1,"efficiency_pct":100.0,"reversals":0,"turns":7,"revisited_cells":0,"reversal_steps":[],"reversal_coords":[],"coords":[[1,1],[1,2],[1,3],[2,3],[3,3],[4,3],[4,4],[4,5],[5,5],[5,6],[6,6],[7,6],[7,7],[7,8],[7,9],[7,10],[7,11],[7,12],[7,13],[8,13],[9,13],[10,13],[11,13],[12,13],[13,13]],"moves":"RRDDDRRDRDDRRRRRRRDDDDDD","off_optimal_steps":0,"off_optimal_unique_cells":0}]},"computer":{"attempts":2,"first_try_moves":28,"first_try_extra":4,"first_try_suboptimality_pct":16.67,"total_steps":52,"total_extra_moves":4,"total_reversals":0,"total_turns":20,"total_revisited_cells":0,"total_off_optimal_steps":17,"learning_decay_rate":4.0,"mean_efficiency_pct":92.85,"load_index":41.67,"attempt_records":[{"runner":"computer","attempt_no":1,"num_moves":28,"extra_moves":4,"is_optimal":0,"efficiency_pct":85.71,"reversals":0,"turns":13,"revisited_cells":0,"reversal_steps":[],"reversal_coords":[],"coords":[[1,1],[1,2],[1,3],[2,3],[2,4],[2,5],[2,6],[1,6],[1,7],[1,8],[1,9],[1,10],[2,10],[2,11],[2,12],[3,12],[3,13],[4,13],[5,13],[5,12],[6,12],[7,12],[7,13],[8,13],[9,13],[10,13],[11,13],[12,13],[13,13]],"moves":"RRDRRRURRRRDRRDRDDLDDRDDDDDD","off_optimal_steps":17,"off_optimal_unique_cells":17},{"runner":"computer","attempt_no":2,"num_moves":24,"extra_moves":0,"is_optimal":1,"efficiency_pct":100.0,"reversals":0,"turns":7,"revisited_cells":0,"reversal_steps":[],"reversal_coords":[],"coords":[[1,1],[1,2],[1,3],[2,3],[3,3],[4,3],[4,4],[4,5],[5,5],[5,6],[5,7],[5,8],[5,9],[6,9],[7,9],[7,10],[7,11],[7,12],[7,13],[8,13],[9,13],[10,13],[11,13],[12,13],[13,13]],"moves":"RRDDDRRDRRRRDDRRRRDDDDDD","off_optimal_steps":0,"off_optimal_unique_cells":0}]}},"optimal_paths":{"player":[[1,1],[1,2],[1,3],[2,3],[3,3],[4,3],[4,4],[4,5],[5,5],[5,6],[6,6],[7,6],[7,7],[7,8],[7,9],[7,10],[7,11],[7,12],[7,13],[8,13],[9,13],[10,13],[11,13],[12,13],[13,13]],"computer":[[1,1],[1,2],[1,3],[2,3],[3,3],[4,3],[4,4],[4,5],[5,5],[5,6],[5,7],[5,8],[5,9],[6,9],[7,9],[7,10],[7,11],[7,12],[7,13],[8,13],[9,13],[10,13],[11,13],[12,13],[13,13]]}},{"maze_id":52064,"stage":2,"grid_size":"24x24","grid_n":24,"optimal_moves":50,"exit_coord":[22,22],"csv_player_attempts":3,"csv_comp_attempts":2,"csv_faster_learner":"computer","computed_winner":"computer","winner_matches_studycmp":true,"lower_cli_runner":"player","runners":{"player":{"attempts":3,"first_try_moves":66,"first_try_extra":16,"first_try_suboptimality_pct":32.0,"total_steps":168,"total_extra_moves":18,"total_reversals":2,"total_turns":73,"total_revisited_cells":3,"total_off_optimal_steps":89,"learning_decay_rate":8.0,"mean_efficiency_pct":90.64,"load_index":102.0,"attempt_records":[{"runner":"player","attempt_no":1,"num_moves":66,"extra_moves":16,"is_optimal":0,"efficiency_pct":75.76,"reversals":2,"turns":26,"revisited_cells":3,"reversal_steps":[12,53],"reversal_coords":[[8,5],[12,22]],"coords":[[1,1],[2,1],[3,1],[4,1],[5,1],[5,2],[5,3],[5,4],[6,4],[7,4],[7,5],[8,5],[7,5],[7,6],[6,6],[6,7],[5,7],[4,7],[3,7],[2,7],[2,8],[1,8],[1,9],[1,10],[1,11],[1,12],[2,12],[2,13],[2,14],[3,14],[4,14],[5,14],[5,13],[6,13],[7,13],[7,14],[7,15],[7,16],[8,16],[9,16],[10,16],[10,15],[10,14],[11,14],[12,14],[12,15],[12,16],[12,17],[12,18],[12,19],[12,20],[12,21],[12,22],[12,21],[12,20],[13,20],[14,20],[14,21],[15,21],[15,22],[16,22],[17,22],[18,22],[19,22],[20,22],[21,22],[22,22]],"moves":"DDDDRRRDDRDURURUUUURURRRRDRRDDDLDDRRRDDDLLDDRRRRRRRRLLDDRDRDDDDDDD","off_optimal_steps":55,"off_optimal_unique_cells":52},{"runner":"player","attempt_no":2,"num_moves":52,"extra_moves":2,"is_optimal":0,"efficiency_pct":96.15,"reversals":0,"turns":21,"revisited_cells":0,"reversal_steps":[],"reversal_coords":[],"coords":[[1,1],[2,1],[3,1],[4,1],[5,1],[5,2],[6,2],[7,2],[8,2],[9,2],[9,1],[10,1],[11,1],[11,2],[12,2],[12,3],[13,3],[14,3],[14,2],[14,1],[15,1],[16,1],[17,1],[18,1],[19,1],[20,1],[21,1],[21,2],[22,2],[22,3],[22,4],[21,4],[21,5],[21,6],[21,7],[21,8],[21,9],[22,9],[22,10],[22,11],[21,11],[21,12],[21,13],[21,14],[22,14],[22,15],[22,16],[22,17],[22,18],[22,19],[22,20],[22,21],[22,22]],"moves":"DDDDRDDDDLDDRDRDDLLDDDDDDDRDRRURRRRRDRRURRRDRRRRRRRR","off_optimal_steps":34,"off_optimal_unique_cells":34},{"runner":"player","attempt_no":3,"num_moves":50,"extra_moves":0,"is_optimal":1,"efficiency_pct":100.0,"reversals":0,"turns":26,"revisited_cells":0,"reversal_steps":[],"reversal_coords":[],"coords":[[1,1],[2,1],[3,1],[4,1],[5,1],[5,2],[6,2],[7,2],[8,2],[9,2],[9,1],[10,1],[11,1],[11,2],[12,2],[12,3],[13,3],[14,3],[14,4],[15,4],[15,5],[15,6],[16,6],[16,7],[16,8],[15,8],[15,9],[14,9],[14,10],[13,10],[13,11],[13,12],[13,13],[14,13],[15,13],[15,14],[16,14],[16,15],[16,16],[16,17],[16,18],[16,19],[17,19],[17,20],[17,21],[17,22],[18,22],[19,22],[20,22],[21,22],[22,22]],"moves":"DDDDRDDDDLDDRDRDDRDRRDRRURURURRRDDRDRRRRRDRRRDDDDD","off_optimal_steps":0,"off_optimal_unique_cells":0}]},"computer":{"attempts":2,"first_try_moves":84,"first_try_extra":34,"first_try_suboptimality_pct":68.0,"total_steps":134,"total_extra_moves":34,"total_reversals":3,"total_turns":64,"total_revisited_cells":12,"total_off_optimal_steps":73,"learning_decay_rate":34.0,"mean_efficiency_pct":79.76,"load_index":132.0,"attempt_records":[{"runner":"computer","attempt_no":1,"num_moves":84,"extra_moves":34,"is_optimal":0,"efficiency_pct":59.52,"reversals":3,"turns":38,"revisited_cells":12,"reversal_steps":[16,27,57],"reversal_coords":[[11,6],[5,9],[7,19]],"coords":[[1,1],[2,1],[3,1],[4,1],[5,1],[5,2],[5,3],[5,4],[6,4],[7,4],[7,5],[8,5],[9,5],[9,6],[10,6],[11,6],[10,6],[9,6],[9,5],[8,5],[7,5],[7,6],[6,6],[6,7],[6,8],[6,9],[5,9],[6,9],[6,8],[6,7],[5,7],[4,7],[3,7],[2,7],[2,8],[1,8],[1,9],[1,10],[1,11],[1,12],[2,12],[2,13],[2,14],[3,14],[4,14],[5,14],[5,13],[6,13],[7,13],[7,14],[7,15],[7,16],[8,16],[8,17],[8,18],[7,18],[7,19],[7,18],[8,18],[8,17],[8,16],[9,16],[10,16],[10,15],[10,14],[11,14],[12,14],[12,15],[12,16],[12,17],[12,18],[12,19],[12,20],[13,20],[14,20],[14,21],[15,21],[15,22],[16,22],[17,22],[18,22],[19,22],[20,22],[21,22],[22,22]],"moves":"DDDDRRRDDRDDRDDUULUURURRRUDLLUUUURURRRRDRRDDDLDDRRRDRRURLDLLDDLLDDRRRRRRDDRDRDDDDDDD","off_optimal_steps":73,"off_optimal_unique_cells":61},{"runner":"computer","attempt_no":2,"num_moves":50,"extra_moves":0,"is_optimal":1,"efficiency_pct":100.0,"reversals":0,"turns":26,"revisited_cells":0,"reversal_steps":[],"reversal_coords":[],"coords":[[1,1],[2,1],[3,1],[4,1],[5,1],[5,2],[6,2],[7,2],[8,2],[9,2],[9,1],[10,1],[11,1],[11,2],[12,2],[12,3],[13,3],[14,3],[14,4],[15,4],[15,5],[15,6],[16,6],[16,7],[16,8],[15,8],[15,9],[14,9],[14,10],[13,10],[13,11],[13,12],[13,13],[14,13],[15,13],[15,14],[16,14],[16,15],[16,16],[16,17],[16,18],[16,19],[17,19],[17,20],[17,21],[17,22],[18,22],[19,22],[20,22],[21,22],[22,22]],"moves":"DDDDRDDDDLDDRDRDDRDRRDRRURURURRRDDRDRRRRRDRRRDDDDD","off_optimal_steps":0,"off_optimal_unique_cells":0}]}},"optimal_paths":{"player":[[1,1],[2,1],[3,1],[4,1],[5,1],[5,2],[6,2],[7,2],[8,2],[9,2],[9,1],[10,1],[11,1],[11,2],[12,2],[12,3],[13,3],[14,3],[14,4],[15,4],[15,5],[15,6],[16,6],[16,7],[16,8],[15,8],[15,9],[14,9],[14,10],[13,10],[13,11],[13,12],[13,13],[14,13],[15,13],[15,14],[16,14],[16,15],[16,16],[16,17],[16,18],[16,19],[17,19],[17,20],[17,21],[17,22],[18,22],[19,22],[20,22],[21,22],[22,22]],"computer":[[1,1],[2,1],[3,1],[4,1],[5,1],[5,2],[6,2],[7,2],[8,2],[9,2],[9,1],[10,1],[11,1],[11,2],[12,2],[12,3],[13,3],[14,3],[14,4],[15,4],[15,5],[15,6],[16,6],[16,7],[16,8],[15,8],[15,9],[14,9],[14,10],[13,10],[13,11],[13,12],[13,13],[14,13],[15,13],[15,14],[16,14],[16,15],[16,16],[16,17],[16,18],[16,19],[17,19],[17,20],[17,21],[17,22],[18,22],[19,22],[20,22],[21,22],[22,22]]}}]};
+
+const DIRS = { U: [-1, 0], D: [1, 0], L: [0, -1], R: [0, 1] };
+const OPPOSITE = { U: "D", D: "U", L: "R", R: "L" };
+
+function round2(n) {
+  return Math.round(n * 100) / 100;
+}
+
+function parseCsvRows(text) {
+  const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").filter(l => l.trim().length > 0);
+  if (lines.length < 2) throw new Error("CSV must have a header and at least one data row.");
+  const headers = lines[0].split(",").map(h => h.trim());
+  return lines.slice(1).map(line => {
+    const cols = line.split(",");
+    const obj = {};
+    headers.forEach((h, idx) => { obj[h] = (cols[idx] || "").trim(); });
+    return obj;
+  });
+}
+
+function traceMoves(movesStr) {
+  const clean = (movesStr || "").toUpperCase().replace(/[^UDLR]/g, "");
+  let r = 1, c = 1;
+  const coords = [[r, c]];
+  const visited = new Set(["1,1"]);
+  let revisited = 0, reversals = 0, turns = 0;
+  const reversalSteps = [];
+  const reversalCoords = [];
+  let prev = null;
+  for (let i = 0; i < clean.length; i++) {
+    const ch = clean[i];
+    if (prev !== null && ch !== prev) {
+      if (OPPOSITE[prev] === ch) {
+        reversals++;
+        reversalSteps.push(i + 1);
+        reversalCoords.push([r, c]);
+      } else {
+        turns++;
+      }
+    }
+    prev = ch;
+    r += DIRS[ch][0];
+    c += DIRS[ch][1];
+    const key = r + "," + c;
+    if (visited.has(key)) revisited++;
+    visited.add(key);
+    coords.push([r, c]);
+  }
+  return { clean, coords, reversals, turns, revisited, reversalSteps, reversalCoords };
+}
+
+function analyzeCsvText(csvText, fileName) {
+  const rows = parseCsvRows(csvText);
+  const grouped = new Map();
+  for (const row of rows) {
+    const id = parseInt(row.maze_id, 10);
+    if (!grouped.has(id)) grouped.set(id, []);
+    grouped.get(id).push(row);
+  }
+  const mazes = [];
+  for (const [mazeId, mrows] of grouped.entries()) {
+    const first = mrows[0];
+    const stage = parseInt(first.stage, 10);
+    const gridSize = first.grid_size || "15x15";
+    const gridN = parseInt(gridSize.toLowerCase().split("x")[0], 10) || 15;
+    const optimalMoves = parseInt(first.optimal_moves, 10) || 0;
+    const csvFaster = (first.faster_learner || "").toLowerCase();
+
+    const byRunner = { player: [], computer: [] };
+    for (const row of mrows) {
+      const runner = (row.runner || "").toLowerCase();
+      if (!byRunner[runner]) byRunner[runner] = [];
+      const numMoves = parseInt(row.num_moves, 10) || 0;
+      const extraMoves = parseInt(row.extra_moves, 10) || 0;
+      const isOpt = parseInt(row.is_optimal, 10) || 0;
+      const tr = traceMoves(row.moves || "");
+      const eff = numMoves > 0 ? round2((optimalMoves / numMoves) * 100) : (optimalMoves === 0 ? 100 : 0);
+      byRunner[runner].push({
+        runner,
+        attempt_no: parseInt(row.attempt_no, 10) || 1,
+        num_moves: numMoves,
+        extra_moves: extraMoves,
+        is_optimal: isOpt,
+        efficiency_pct: eff,
+        reversals: tr.reversals,
+        turns: tr.turns,
+        revisited_cells: tr.revisited,
+        reversal_steps: tr.reversalSteps,
+        reversal_coords: tr.reversalCoords,
+        coords: tr.coords,
+        moves: tr.clean
+      });
+    }
+
+    let anyOptSet = new Set();
+    for (const rName of ["player", "computer"]) {
+      byRunner[rName].sort((a, b) => a.attempt_no - b.attempt_no);
+      const optAtt = byRunner[rName].find(a => a.is_optimal === 1);
+      if (optAtt && anyOptSet.size === 0) {
+        anyOptSet = new Set(optAtt.coords.map(p => p[0] + "," + p[1]));
+      }
+    }
+
+    const runners = {};
+    const optimalPaths = {};
+    for (const rName of ["player", "computer"]) {
+      const list = byRunner[rName];
+      if (!list || list.length === 0) continue;
+      const optAtt = list.find(a => a.is_optimal === 1);
+      const optCoords = optAtt ? optAtt.coords : [];
+      const optSet = optCoords.length ? new Set(optCoords.map(p => p[0] + "," + p[1])) : anyOptSet;
+      optimalPaths[rName] = optCoords;
+
+      for (const att of list) {
+        let off = 0;
+        if (optSet.size > 0) {
+          for (let i = 1; i < att.coords.length; i++) {
+            if (!optSet.has(att.coords[i][0] + "," + att.coords[i][1])) off++;
+          }
+        }
+        att.off_optimal_steps = off;
+      }
+
+      const attempts = list.length;
+      const firstAtt = list[0];
+      const totalSteps = list.reduce((s, a) => s + a.num_moves, 0);
+      const totalExtra = list.reduce((s, a) => s + a.extra_moves, 0);
+      const totalRev = list.reduce((s, a) => s + a.reversals, 0);
+      const totalRevisit = list.reduce((s, a) => s + a.revisited_cells, 0);
+      const totalOff = list.reduce((s, a) => s + a.off_optimal_steps, 0);
+      const totalTurns = list.reduce((s, a) => s + a.turns, 0);
+      const extraNorm = optimalMoves > 0 ? totalExtra / optimalMoves : 0;
+      const cli = round2(25 * Math.max(0, attempts - 1) + 100 * extraNorm + 5 * totalRev + 2 * totalRevisit);
+
+      runners[rName] = {
+        attempts,
+        first_try_moves: firstAtt.num_moves,
+        first_try_extra: firstAtt.extra_moves,
+        first_try_suboptimality_pct: optimalMoves > 0 ? round2((firstAtt.extra_moves / optimalMoves) * 100) : 0,
+        total_steps: totalSteps,
+        total_extra_moves: totalExtra,
+        total_reversals: totalRev,
+        total_turns: totalTurns,
+        total_revisited_cells: totalRevisit,
+        total_off_optimal_steps: totalOff,
+        learning_decay_rate: round2(firstAtt.extra_moves / Math.max(1, attempts - 1)),
+        load_index: cli,
+        attempt_records: list
+      };
+    }
+
+    const p = runners.player, c = runners.computer;
+    let winner = "incomplete";
+    if (p && c) {
+      if (p.attempts < c.attempts || (p.attempts === c.attempts && p.total_steps < c.total_steps)) winner = "player";
+      else if (c.attempts < p.attempts || (p.attempts === c.attempts && c.total_steps < p.total_steps)) winner = "computer";
+      else winner = "tie";
+    }
+
+    let exitCoord = [gridN - 2, gridN - 2];
+    const refPath = (optimalPaths.player && optimalPaths.player.length) ? optimalPaths.player : optimalPaths.computer;
+    if (refPath && refPath.length) exitCoord = refPath[refPath.length - 1];
+
+    mazes.push({
+      maze_id: mazeId,
+      stage,
+      grid_size: gridSize,
+      grid_n: gridN,
+      optimal_moves: optimalMoves,
+      exit_coord: exitCoord,
+      csv_faster_learner: csvFaster,
+      computed_winner: winner,
+      winner_matches_studycmp: winner === csvFaster,
+      runners,
+      optimal_paths: optimalPaths
+    });
+  }
+
+  const aggGroup = (label, stage, gridSize, list) => {
+    const calc = (rKey) => {
+      const items = list.map(m => m.runners[rKey]).filter(Boolean);
+      const n = items.length || 1;
+      const mean = (fn) => round2(items.reduce((s, x) => s + fn(x), 0) / n);
+      return {
+        count: items.length,
+        mean_attempts: mean(x => x.attempts),
+        mean_first_try_extra: mean(x => x.first_try_extra),
+        mean_first_try_subopt_pct: mean(x => x.first_try_suboptimality_pct),
+        mean_total_steps: mean(x => x.total_steps),
+        mean_total_extra_moves: mean(x => x.total_extra_moves),
+        mean_reversals: mean(x => x.total_reversals),
+        mean_revisited_cells: mean(x => x.total_revisited_cells),
+        mean_off_optimal_steps: mean(x => x.total_off_optimal_steps),
+        mean_load_index: mean(x => x.load_index)
+      };
+    };
+    return {
+      label,
+      stage,
+      grid_size: gridSize,
+      maze_count: list.length,
+      wins: {
+        player: list.filter(m => m.computed_winner === "player").length,
+        computer: list.filter(m => m.computed_winner === "computer").length,
+        tie: list.filter(m => m.computed_winner === "tie").length
+      },
+      player: calc("player"),
+      computer: calc("computer")
+    };
+  };
+
+  const stageNums = [...new Set(mazes.map(m => m.stage))].sort((a, b) => a - b);
+  const stages = stageNums.map(st => {
+    const sub = mazes.filter(m => m.stage === st);
+    return aggGroup("Stage " + st + " (" + sub[0].grid_size + ")", st, sub[0].grid_size, sub);
+  });
+
+  return {
+    source_csv: fileName,
+    maze_count: mazes.length,
+    total_attempt_rows: rows.length,
+    all_winners_verified: mazes.every(m => m.winner_matches_studycmp),
+    stages,
+    overall: aggGroup("Overall (All Stages)", 0, "All", mazes),
+    mazes
+  };
+}
+
+let currentData = INITIAL_DATA;
+let selectedMazeId = INITIAL_DATA.mazes[0].maze_id;
+let selectedAttemptNo = 1; // number or "opt"
+let showPriorGhost = true;
+let stepProgress = 9999;
+let playTimer = null;
+
+function el(tag, className, text, label) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = String(text);
+  if (label !== undefined) node.dataset.label = String(label);
+  return node;
+}
+
+function svgEl(tag, attrs) {
+  const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, String(v));
+  return node;
+}
+
+function renderAll() {
+  renderStatusAndKpis();
+  renderStageTable();
+  renderMazeTable();
+  renderStageCliChart();
+  populateMazeSelect();
+  renderViewerAndCurves();
+}
+
+function renderStatusAndKpis() {
+  const st = document.getElementById("dataset-status");
+  st.textContent = currentData.source_csv + " (" + currentData.maze_count + " mazes, " + currentData.total_attempt_rows + " attempts)";
+
+  const kpiGrid = document.getElementById("kpi-grid");
+  kpiGrid.replaceChildren();
+  const ov = currentData.overall;
+  const p = ov.player, c = ov.computer;
+
+  const cards = [
+    {
+      title: "Faster-Learner Record",
+      val: ov.wins.player + " - " + ov.wins.computer + (ov.wins.tie ? " - " + ov.wins.tie : ""),
+      meta: "Player Wins vs Bot Wins (" + (currentData.all_winners_verified ? "Verified studycmp" : "Custom CSV") + ")"
+    },
+    {
+      title: "Mean Cognitive Load Index",
+      val: p.mean_load_index + " vs " + c.mean_load_index,
+      meta: "Human CLI vs Bot CLI (lower is faster/cleaner)"
+    },
+    {
+      title: "Mean Attempts to Optimal",
+      val: p.mean_attempts + " vs " + c.mean_attempts,
+      meta: "Average tries per maze (Human vs Bot)"
+    },
+    {
+      title: "1st-Try Overhead %",
+      val: p.mean_first_try_subopt_pct + "% vs " + c.mean_first_try_subopt_pct + "%",
+      meta: "Mean initial extra steps before maze memory forms"
+    },
+    {
+      title: "Avg 180° Reversals / Maze",
+      val: p.mean_reversals + " vs " + c.mean_reversals,
+      meta: "Immediate turnaround hesitations (Human vs Bot)"
+    }
+  ];
+
+  for (const item of cards) {
+    const card = el("div", "stat-card");
+    card.appendChild(el("h3", "", item.title));
+    card.appendChild(el("div", "val", item.val));
+    card.appendChild(el("div", "meta", item.meta));
+    kpiGrid.appendChild(card);
+  }
+}
+
+function renderStageTable() {
+  const tbody = document.getElementById("stage-tbody");
+  tbody.replaceChildren();
+  const rows = [...currentData.stages, currentData.overall];
+  for (const st of rows) {
+    const tr = el("tr");
+    const p = st.player, c = st.computer, w = st.wins;
+    tr.appendChild(el("th", "", st.label)).setAttribute("scope", "row");
+    tr.appendChild(el("td", "", st.maze_count, "Mazes"));
+    tr.appendChild(el("td", "", w.player + " / " + w.computer + " / " + w.tie, "Wins (Y/B/T)"));
+    tr.appendChild(el("td", "", p.mean_attempts + " vs " + c.mean_attempts, "Mean Tries (Y vs B)"));
+    tr.appendChild(el("td", "", p.mean_first_try_subopt_pct + "% vs " + c.mean_first_try_subopt_pct + "%", "1st-Try Overhead %"));
+    tr.appendChild(el("td", "", p.mean_total_steps + " vs " + c.mean_total_steps, "Mean Total Steps"));
+    tr.appendChild(el("td", "", p.mean_reversals + " vs " + c.mean_reversals, "180° Reversals"));
+    tr.appendChild(el("td", "", p.mean_revisited_cells + " vs " + c.mean_revisited_cells, "Revisited Cells"));
+
+    const cliTd = el("td", "", undefined, "Mean CLI (Y vs B)");
+    const hSpan = el("span", p.mean_load_index <= c.mean_load_index ? "human-txt" : "", p.mean_load_index);
+    const bSpan = el("span", c.mean_load_index < p.mean_load_index ? "bot-txt" : "", c.mean_load_index);
+    cliTd.append(hSpan, document.createTextNode(" vs "), bSpan);
+    tr.appendChild(cliTd);
+    tbody.appendChild(tr);
+  }
+}
+
+function renderMazeTable() {
+  const tbody = document.getElementById("maze-tbody");
+  tbody.replaceChildren();
+  const emptyR = { attempts: "-", first_try_extra: "-", total_steps: "-", total_reversals: "-", total_revisited_cells: "-", load_index: 0 };
+  for (const m of currentData.mazes) {
+    const p = m.runners.player || emptyR;
+    const c = m.runners.computer || emptyR;
+    const tr = el("tr", "clickable-row" + (m.maze_id === selectedMazeId ? " selected-row" : ""));
+    tr.addEventListener("click", () => {
+      selectedMazeId = m.maze_id;
+      selectedAttemptNo = 1;
+      stepProgress = 9999;
+      stopPlayback();
+      renderMazeTable();
+      populateMazeSelect();
+      renderViewerAndCurves();
+    });
+    const th = el("th", "", "#" + m.maze_id);
+    th.setAttribute("scope", "row");
+    tr.appendChild(th);
+    tr.appendChild(el("td", "", "Stage " + m.stage + " (" + m.grid_size + ")", "Stage (Grid)"));
+    tr.appendChild(el("td", "gold-txt", m.optimal_moves, "Optimal"));
+    tr.appendChild(el("td", "", p.attempts + " / " + c.attempts, "Tries (Y / B)"));
+    tr.appendChild(el("td", "", p.first_try_extra + " / " + c.first_try_extra, "1st-Try Extra (Y / B)"));
+    tr.appendChild(el("td", "", p.total_steps + " / " + c.total_steps, "Total Steps (Y / B)"));
+    tr.appendChild(el("td", "", p.total_reversals + " / " + p.total_revisited_cells, "Rev / Back (Y)"));
+    tr.appendChild(el("td", "", c.total_reversals + " / " + c.total_revisited_cells, "Rev / Back (B)"));
+
+    const cliTd = el("td", "", undefined, "CLI (Y vs B)");
+    cliTd.append(
+      el("span", p.load_index <= c.load_index ? "human-txt" : "", p.load_index),
+      document.createTextNode(" vs "),
+      el("span", c.load_index < p.load_index ? "bot-txt" : "", c.load_index)
+    );
+    tr.appendChild(cliTd);
+
+    const winTd = el("td", "", undefined, "Faster Learner");
+    const cls = m.computed_winner === "player" ? "badge-player" : (m.computed_winner === "computer" ? "badge-bot" : "badge-tie");
+    winTd.appendChild(el("span", "badge " + cls, m.computed_winner));
+    tr.appendChild(winTd);
+    tbody.appendChild(tr);
+  }
+}
+
+function renderStageCliChart() {
+  const svg = document.getElementById("stage-cli-svg");
+  svg.replaceChildren();
+  const stages = currentData.stages;
+  const maxVal = Math.max(20, ...stages.flatMap(s => [s.player.mean_load_index, s.computer.mean_load_index])) * 1.15;
+  const padL = 50, padB = 38, padT = 22, padR = 20;
+  const w = 520 - padL - padR, h = 260 - padT - padB;
+
+  for (let i = 0; i <= 4; i++) {
+    const v = Math.round((maxVal * i) / 4);
+    const y = padT + h - (h * i) / 4;
+    svg.appendChild(svgEl("line", { x1: padL, y1: y, x2: 520 - padR, y2: y, stroke: "#263244", "stroke-dasharray": "3 3" }));
+    const lbl = svgEl("text", { x: padL - 8, y: y + 4, fill: "#8892b0", "font-size": 11, "text-anchor": "end" });
+    lbl.textContent = v;
+    svg.appendChild(lbl);
+  }
+
+  const groupW = w / Math.max(1, stages.length);
+  const barW = Math.min(44, groupW * 0.28);
+  stages.forEach((st, idx) => {
+    const cx = padL + groupW * (idx + 0.5);
+    const pH = (st.player.mean_load_index / maxVal) * h;
+    const cH = (st.computer.mean_load_index / maxVal) * h;
+
+    svg.appendChild(svgEl("rect", { x: cx - barW - 4, y: padT + h - pH, width: barW, height: pH, rx: 4, fill: "#00d26a" }));
+    svg.appendChild(svgEl("rect", { x: cx + 4, y: padT + h - cH, width: barW, height: cH, rx: 4, fill: "#00e5ff" }));
+
+    const pLbl = svgEl("text", { x: cx - barW / 2 - 4, y: padT + h - pH - 5, fill: "#00d26a", "font-size": 11, "font-weight": "bold", "text-anchor": "middle" });
+    pLbl.textContent = st.player.mean_load_index.toFixed(0);
+    const cLbl = svgEl("text", { x: cx + barW / 2 + 4, y: padT + h - cH - 5, fill: "#00e5ff", "font-size": 11, "font-weight": "bold", "text-anchor": "middle" });
+    cLbl.textContent = st.computer.mean_load_index.toFixed(0);
+    const xLbl = svgEl("text", { x: cx, y: padT + h + 20, fill: "#cbd5e1", "font-size": 12, "text-anchor": "middle" });
+    xLbl.textContent = "S" + st.stage + " (" + st.grid_size + ")";
+    svg.append(pLbl, cLbl, xLbl);
+  });
+}
+
+function renderLearningCurve(maze) {
+  document.getElementById("curve-maze-label").textContent = "Maze #" + maze.maze_id + " (" + maze.grid_size + ", Optimal=" + maze.optimal_moves + ")";
+  const svg = document.getElementById("learning-curve-svg");
+  svg.replaceChildren();
+
+  const pAtts = maze.runners.player ? maze.runners.player.attempt_records : [];
+  const cAtts = maze.runners.computer ? maze.runners.computer.attempt_records : [];
+  const maxTry = Math.max(2, pAtts.length, cAtts.length);
+  const maxExtra = Math.max(8, ...pAtts.map(a => a.extra_moves), ...cAtts.map(a => a.extra_moves)) * 1.15;
+
+  const padL = 46, padB = 36, padT = 22, padR = 24;
+  const w = 520 - padL - padR, h = 260 - padT - padB;
+
+  for (let i = 0; i <= 4; i++) {
+    const val = Math.round((maxExtra * i) / 4);
+    const y = padT + h - (h * i) / 4;
+    svg.appendChild(svgEl("line", { x1: padL, y1: y, x2: 520 - padR, y2: y, stroke: i === 0 ? "#ffbe0b" : "#263244", "stroke-dasharray": i === 0 ? "5 4" : "3 3" }));
+    const lbl = svgEl("text", { x: padL - 8, y: y + 4, fill: i === 0 ? "#ffbe0b" : "#8892b0", "font-size": 11, "text-anchor": "end" });
+    lbl.textContent = val;
+    svg.appendChild(lbl);
+  }
+
+  const xPos = (tryNo) => padL + ((tryNo - 1) / Math.max(1, maxTry - 1)) * w;
+  const yPos = (extra) => padT + h - (extra / maxExtra) * h;
+
+  for (let t = 1; t <= maxTry; t++) {
+    const xl = svgEl("text", { x: xPos(t), y: padT + h + 20, fill: "#cbd5e1", "font-size": 12, "text-anchor": "middle" });
+    xl.textContent = "Try " + t;
+    svg.appendChild(xl);
+  }
+
+  const drawSeries = (records, color) => {
+    if (!records.length) return;
+    const pts = records.map(a => xPos(a.attempt_no) + "," + yPos(a.extra_moves)).join(" ");
+    svg.appendChild(svgEl("polyline", { fill: "none", stroke: color, "stroke-width": 3, "stroke-linecap": "round", "stroke-linejoin": "round", points: pts }));
+    for (const a of records) {
+      const cx = xPos(a.attempt_no), cy = yPos(a.extra_moves);
+      svg.appendChild(svgEl("circle", { cx, cy, r: 5, fill: color, stroke: "#0f141c", "stroke-width": 2 }));
+      const vl = svgEl("text", { x: cx, y: cy - 9, fill: color, "font-size": 11, "font-weight": "bold", "text-anchor": "middle" });
+      vl.textContent = "+" + a.extra_moves;
+      svg.appendChild(vl);
+    }
+  };
+
+  drawSeries(pAtts, "#00d26a");
+  drawSeries(cAtts, "#00e5ff");
+}
+
+function populateMazeSelect() {
+  const sel = document.getElementById("maze-select");
+  sel.replaceChildren();
+  for (const m of currentData.mazes) {
+    const opt = el("option", "", "#" + m.maze_id + " — Stage " + m.stage + " (" + m.grid_size + ", Opt " + m.optimal_moves + ")");
+    opt.value = m.maze_id;
+    if (m.maze_id === selectedMazeId) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+
+function pickAttempt(records, choice) {
+  if (!records || !records.length) return null;
+  if (choice === "opt") return records[records.length - 1];
+  const idx = Math.min(choice - 1, records.length - 1);
+  return records[idx];
+}
+
+function renderGridSvg(svgId, maze, runnerKey, attempt, maxStep) {
+  const svg = document.getElementById(svgId);
+  svg.replaceChildren();
+  if (!attempt) return;
+
+  const n = maze.grid_n;
+  const cellPx = 360 / n;
+  const optSet = new Set((maze.optimal_paths[runnerKey] || []).map(p => p[0] + "," + p[1]));
+
+  // Outer border walls (row 0, row n-1, col 0, col n-1)
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      const isBorder = r === 0 || c === 0 || r === n - 1 || c === n - 1;
+      svg.appendChild(svgEl("rect", {
+        x: c * cellPx,
+        y: r * cellPx,
+        width: cellPx + 0.3,
+        height: cellPx + 0.3,
+        fill: isBorder ? "#1c2c47" : "#111722",
+        stroke: "#182130",
+        "stroke-width": 0.4
+      }));
+    }
+  }
+
+  // Optimal corridor underlay
+  for (const pt of (maze.optimal_paths[runnerKey] || [])) {
+    svg.appendChild(svgEl("rect", {
+      x: pt[1] * cellPx + cellPx * 0.14,
+      y: pt[0] * cellPx + cellPx * 0.14,
+      width: cellPx * 0.72,
+      height: cellPx * 0.72,
+      rx: 2,
+      fill: "rgba(255, 190, 11, 0.28)"
+    }));
+  }
+
+  // Prior-tries breadcrumb ghost overlay (dead ends pruned before this attempt)
+  if (showPriorGhost && maze.runners[runnerKey]) {
+    for (const prevAtt of maze.runners[runnerKey].attempt_records) {
+      if (prevAtt.attempt_no < attempt.attempt_no) {
+        for (const [pr, pc] of prevAtt.coords) {
+          svg.appendChild(svgEl("rect", {
+            x: pc * cellPx + cellPx * 0.24,
+            y: pr * cellPx + cellPx * 0.24,
+            width: cellPx * 0.52,
+            height: cellPx * 0.52,
+            rx: 1.5,
+            fill: "rgba(148, 163, 184, 0.34)"
+          }));
+        }
+      }
+    }
+  }
+
+  const limit = Math.min(attempt.coords.length - 1, maxStep);
+  const counts = new Map();
+  for (let i = 0; i <= limit; i++) {
+    const [r, c] = attempt.coords[i];
+    const key = r + "," + c;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+
+  const runnerColor = runnerKey === "player" ? "#00d26a" : "#00e5ff";
+  for (let i = 0; i <= limit; i++) {
+    const [r, c] = attempt.coords[i];
+    const key = r + "," + c;
+    const onOpt = optSet.size === 0 || optSet.has(key);
+    const visits = counts.get(key) || 1;
+    const fill = onOpt ? runnerColor : "#ff5964";
+    const opacity = visits > 1 ? 0.96 : 0.78;
+    const rect = svgEl("rect", {
+      x: c * cellPx + cellPx * 0.1,
+      y: r * cellPx + cellPx * 0.1,
+      width: cellPx * 0.8,
+      height: cellPx * 0.8,
+      rx: 2,
+      fill,
+      "fill-opacity": opacity
+    });
+    rect.addEventListener("mouseenter", () => {
+      document.getElementById("viewer-hover-info").textContent =
+        (runnerKey === "player" ? "Human" : "Bot") + " (" + r + ", " + c + ") — visits: " + visits + " — " + (onOpt ? "On optimal corridor" : "Off-optimal excursion");
+    });
+    svg.appendChild(rect);
+  }
+
+  // 180-degree reversal markers up to current step
+  attempt.reversal_steps.forEach((stepIdx, idx) => {
+    if (stepIdx <= limit + 1) {
+      const [r, c] = attempt.reversal_coords[idx];
+      svg.appendChild(svgEl("circle", {
+        cx: c * cellPx + cellPx / 2,
+        cy: r * cellPx + cellPx / 2,
+        r: Math.max(3, cellPx * 0.34),
+        fill: "#ff2e93",
+        stroke: "#fff",
+        "stroke-width": 1.2
+      }));
+    }
+  });
+
+  // Start (1,1), Exit, and Current Position Marker
+  const markCell = (pt, text, bg) => {
+    const [r, c] = pt;
+    svg.appendChild(svgEl("rect", { x: c * cellPx, y: r * cellPx, width: cellPx, height: cellPx, rx: 3, fill: bg }));
+    const lbl = svgEl("text", { x: c * cellPx + cellPx / 2, y: r * cellPx + cellPx * 0.72, fill: "#0b1017", "font-size": Math.max(8, cellPx * 0.65), "font-weight": "bold", "text-anchor": "middle" });
+    lbl.textContent = text;
+    svg.appendChild(lbl);
+  };
+  markCell([1, 1], "S", "#ffffff");
+  markCell(maze.exit_coord, "E", "#d946ef");
+
+  const curPt = attempt.coords[limit];
+  svg.appendChild(svgEl("circle", {
+    cx: curPt[1] * cellPx + cellPx / 2,
+    cy: curPt[0] * cellPx + cellPx / 2,
+    r: Math.max(3, cellPx * 0.28),
+    fill: "#fff",
+    stroke: "#0f141c",
+    "stroke-width": 1.5
+  }));
+}
+
+function renderMiniStats(containerId, attempt) {
+  const box = document.getElementById(containerId);
+  box.replaceChildren();
+  if (!attempt) return;
+  const items = [
+    ["Moves / Extra", attempt.num_moves + " (+" + attempt.extra_moves + ")"],
+    ["Efficiency", attempt.efficiency_pct + "%"],
+    ["180° Reversals", attempt.reversals],
+    ["90° Turns", attempt.turns],
+    ["Revisited Cells", attempt.revisited_cells],
+    ["Off-Opt Steps", attempt.off_optimal_steps]
+  ];
+  for (const [k, v] of items) {
+    const d = el("div", "mini-stat");
+    d.appendChild(el("span", "", k));
+    d.appendChild(el("strong", "", v));
+    box.appendChild(d);
+  }
+}
+
+function renderViewerAndCurves() {
+  const maze = currentData.mazes.find(m => m.maze_id === selectedMazeId) || currentData.mazes[0];
+  selectedMazeId = maze.maze_id;
+  renderLearningCurve(maze);
+
+  const pRecs = maze.runners.player ? maze.runners.player.attempt_records : [];
+  const cRecs = maze.runners.computer ? maze.runners.computer.attempt_records : [];
+  const maxTry = Math.max(pRecs.length, cRecs.length);
+
+  const pills = document.getElementById("attempt-buttons");
+  pills.replaceChildren();
+  for (let t = 1; t <= maxTry; t++) {
+    const b = el("button", "btn" + (selectedAttemptNo === t ? " active" : ""), "Try " + t);
+    b.type = "button";
+    b.addEventListener("click", () => {
+      selectedAttemptNo = t;
+      stepProgress = 9999;
+      stopPlayback();
+      renderViewerAndCurves();
+    });
+    pills.appendChild(b);
+  }
+  const optBtn = el("button", "btn" + (selectedAttemptNo === "opt" ? " active" : ""), "Final Optimal");
+  optBtn.type = "button";
+  optBtn.addEventListener("click", () => {
+    selectedAttemptNo = "opt";
+    stepProgress = 9999;
+    stopPlayback();
+    renderViewerAndCurves();
+  });
+  pills.appendChild(optBtn);
+
+  const pAtt = pickAttempt(pRecs, selectedAttemptNo);
+  const cAtt = pickAttempt(cRecs, selectedAttemptNo);
+  const maxSteps = Math.max(pAtt ? pAtt.num_moves : 0, cAtt ? cAtt.num_moves : 0);
+
+  const slider = document.getElementById("step-slider");
+  slider.max = maxSteps;
+  if (stepProgress > maxSteps) stepProgress = maxSteps;
+  slider.value = stepProgress;
+  document.getElementById("step-counter").textContent = "Step " + stepProgress + " / " + maxSteps;
+
+  document.getElementById("player-try-badge").textContent = pAtt ? ("Try " + pAtt.attempt_no + (pAtt.is_optimal ? " (OPT)" : "")) : "-";
+  document.getElementById("bot-try-badge").textContent = cAtt ? ("Try " + cAtt.attempt_no + (cAtt.is_optimal ? " (OPT)" : "")) : "-";
+
+  renderGridSvg("player-grid-svg", maze, "player", pAtt, stepProgress);
+  renderGridSvg("bot-grid-svg", maze, "computer", cAtt, stepProgress);
+  renderMiniStats("player-mini-stats", pAtt);
+  renderMiniStats("bot-mini-stats", cAtt);
+}
+
+function stopPlayback() {
+  if (playTimer) {
+    clearInterval(playTimer);
+    playTimer = null;
+    document.getElementById("play-btn").textContent = "Play Steps";
+  }
+}
+
+document.getElementById("maze-select").addEventListener("change", (ev) => {
+  selectedMazeId = parseInt(ev.target.value, 10);
+  selectedAttemptNo = 1;
+  stepProgress = 9999;
+  stopPlayback();
+  renderMazeTable();
+  renderViewerAndCurves();
+});
+
+document.getElementById("step-slider").addEventListener("input", (ev) => {
+  stopPlayback();
+  stepProgress = parseInt(ev.target.value, 10);
+  renderViewerAndCurves();
+});
+
+document.getElementById("ghost-btn").addEventListener("click", (ev) => {
+  showPriorGhost = !showPriorGhost;
+  ev.currentTarget.classList.toggle("active", showPriorGhost);
+  ev.currentTarget.textContent = "Prior Tries Ghost: " + (showPriorGhost ? "ON" : "OFF");
+  renderViewerAndCurves();
+});
+
+document.getElementById("play-btn").addEventListener("click", () => {
+  if (playTimer) {
+    stopPlayback();
+    return;
+  }
+  const slider = document.getElementById("step-slider");
+  const maxS = parseInt(slider.max, 10);
+  if (stepProgress >= maxS) stepProgress = 0;
+  document.getElementById("play-btn").textContent = "Pause";
+  playTimer = setInterval(() => {
+    if (stepProgress >= maxS) {
+      stopPlayback();
+      return;
+    }
+    stepProgress++;
+    renderViewerAndCurves();
+  }, 85);
+});
+
+document.getElementById("csv-upload").addEventListener("change", async (ev) => {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    currentData = analyzeCsvText(text, file.name);
+    selectedMazeId = currentData.mazes[0].maze_id;
+    selectedAttemptNo = 1;
+    stepProgress = 9999;
+    stopPlayback();
+    renderAll();
+  } catch (err) {
+    document.getElementById("dataset-status").textContent = "CSV parse error: " + err.message;
+  }
+});
+
+document.getElementById("reset-btn").addEventListener("click", () => {
+  currentData = INITIAL_DATA;
+  selectedMazeId = INITIAL_DATA.mazes[0].maze_id;
+  selectedAttemptNo = 1;
+  stepProgress = 9999;
+  stopPlayback();
+  document.getElementById("csv-upload").value = "";
+  renderAll();
+});
+
+renderAll();
+</script>
+</body>
+</html>

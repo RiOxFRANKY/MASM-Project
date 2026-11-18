@@ -135,6 +135,23 @@ srtry   db 3 dup(0)             ; bot tries needed on each stage
 srhum   db 3 dup(0)             ; your tries needed on each stage
 srwin   db 3 dup(0)             ; who learned faster: 0 bot, 1 you, 2 tie
 
+; ---- cognitive load CSV logging -----------------------------------------
+MAXMOV  equ 4096                ; max LRUD moves recorded per study attempt
+stseed  dw 0                    ; initial seed of the current study maze
+movelen dw 0                    ; moves recorded in movebuf for this attempt
+movebuf db MAXMOV dup(0)        ; LRUD move sequence for current attempt
+csvname db 'COGLOAD.CSV',0
+cogtmp  db 'COGLOAD.TMP',0
+csvhdr  db 'maze_id,stage,grid_size,optimal_moves,player_attempts,comp_attempts,faster_learner,runner,attempt_no,num_moves,extra_moves,is_optimal,moves',13,10,0
+csvline db 128 dup(0)
+csv_rec db 7 dup(0)             ; [0]=runner, [1..2]=trynum, [3..4]=steps, [5..6]=movelen
+csvh    dw 0
+tmph    dw 0
+s_play  db 'player',0
+s_comp  db 'computer',0
+s_tie   db 'tie',0
+msgclog db 'Saved cognitive load log to COGLOAD.CSV$'
+
 ; ---- network PvP (mode 2) ----------------------------------------------
 ; DOS has no networking, so mode 2 uses the network service of the
 ; DOSBox-RS emulator on INT 61h (it speaks WebSocket to the PvP server):
@@ -848,6 +865,10 @@ applymove proc
     inc steps[di]
     call tbase
     mov trail[bx+si],1          ; remember the walked path
+    cmp players,3
+    jne am_notcog
+    call cogrec                 ; record L/R/U/D move for cognitive study CSV
+am_notcog:
     mov ax,dx
     call drawcell               ; repaint the old square
     mov ax,si
@@ -2549,6 +2570,9 @@ study proc
     mov level,0
 sy_stage:
     call setup
+    mov ax,seed
+    mov stseed,ax               ; save initial maze seed before buildmaze
+    call cogtmp_rst             ; clear any stale per-stage temp log
     call buildmaze
     mov bl,level
     xor bh,bh
@@ -2595,6 +2619,7 @@ sy_stage:
 sy_end:
     call studyfinal
 sy_quit:
+    call cogtmp_rst
     mov orgx[1],RIGHTX
     ret
 study endp
@@ -2692,6 +2717,7 @@ newtry proc
     mov ax,spos
     mov ppos[2],ax
     mov steps[2],0
+    mov movelen,0
     mov bplen,0
     mov mode,0
     mov who,1
@@ -2736,6 +2762,7 @@ et_next:
     inc bx
     jmp et_loop
 et_done:
+    call cogtmp_add
     mov ax,trynum
     call studyhist
     ret
@@ -3241,6 +3268,12 @@ cp_verdict:
     mov si,offset msgslst
 cp_keys:
     mov ah,A_HUD
+    call vtext
+    call cogsave
+    mov dh,23
+    mov dl,LEFTX
+    mov si,offset msgclog
+    mov ah,A_DIM
     call vtext
     ret
 studycmp endp
@@ -4089,5 +4122,346 @@ savecfg proc
 sc_done:
     ret
 savecfg endp
+
+; ===========================================================================
+; cognitive load CSV logging (COGLOAD.CSV)
+;   Records each study attempt (LRUD moves, step counts, optimal steps,
+;   and human vs computer comparison) into C:\COGLOAD.CSV.
+; ===========================================================================
+cogrec proc                     ; record L/R/U/D move from DX -> SI
+    push ax
+    push bx
+    mov ax,si
+    sub ax,dx
+    cmp ax,deltas[0]
+    jne cr_dn
+    mov al,'U'
+    jmp cr_put
+cr_dn:
+    cmp ax,deltas[2]
+    jne cr_lf
+    mov al,'D'
+    jmp cr_put
+cr_lf:
+    cmp ax,deltas[4]
+    jne cr_rt
+    mov al,'L'
+    jmp cr_put
+cr_rt:
+    cmp ax,deltas[6]
+    jne cr_done
+    mov al,'R'
+cr_put:
+    mov bx,movelen
+    cmp bx,MAXMOV
+    jae cr_done
+    mov movebuf[bx],al
+    inc movelen
+cr_done:
+    pop bx
+    pop ax
+    ret
+cogrec endp
+
+cogtmp_rst proc                 ; delete temporary stage log if present
+    push ax
+    push dx
+    mov ah,41h
+    mov dx,offset cogtmp
+    int 21h
+    pop dx
+    pop ax
+    ret
+cogtmp_rst endp
+
+cogtmp_add proc                 ; append current attempt record to COGLOAD.TMP
+    push ax
+    push bx
+    push cx
+    push dx
+    mov al,runner
+    mov csv_rec[0],al
+    mov ax,trynum
+    mov word ptr csv_rec[1],ax
+    mov ax,steps[2]
+    mov word ptr csv_rec[3],ax
+    mov ax,movelen
+    mov word ptr csv_rec[5],ax
+    mov ax,3D02h
+    mov dx,offset cogtmp
+    int 21h
+    jnc cta_open
+    mov ah,3Ch
+    xor cx,cx
+    mov dx,offset cogtmp
+    int 21h
+    jc cta_done
+cta_open:
+    mov bx,ax
+    mov ax,4202h
+    xor cx,cx
+    xor dx,dx
+    int 21h
+    mov cx,7
+    mov dx,offset csv_rec
+    mov ah,40h
+    int 21h
+    mov cx,movelen
+    cmp cx,MAXMOV
+    jbe cta_lenok
+    mov cx,MAXMOV
+cta_lenok:
+    jcxz cta_close
+    mov dx,offset movebuf
+    mov ah,40h
+    int 21h
+cta_close:
+    mov ah,3Eh
+    int 21h
+cta_done:
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+cogtmp_add endp
+
+cogsave proc                    ; flush COGLOAD.TMP stage attempts to COGLOAD.CSV
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    mov ax,3D02h
+    mov dx,offset csvname
+    int 21h
+    jc cg_create
+    mov bx,ax
+    mov ax,4202h
+    xor cx,cx
+    xor dx,dx
+    int 21h
+    or ax,dx
+    jnz cg_csvok
+    jmp cg_hdr
+cg_create:
+    mov ah,3Ch
+    xor cx,cx
+    mov dx,offset csvname
+    int 21h
+    jnc cg_cr_ok
+    jmp cg_fail
+cg_cr_ok:
+    mov bx,ax
+cg_hdr:
+    mov si,offset csvhdr
+    call strlen
+    mov cx,ax
+    mov dx,offset csvhdr
+    mov ah,40h
+    int 21h
+cg_csvok:
+    mov csvh,bx
+    mov ax,3D00h
+    mov dx,offset cogtmp
+    int 21h
+    jnc cg_tmp_ok
+    jmp cg_close_csv
+cg_tmp_ok:
+    mov tmph,ax
+cg_loop:
+    mov bx,tmph
+    mov ah,3Fh
+    mov cx,7
+    mov dx,offset csv_rec
+    int 21h
+    jnc cg_rd_ok
+    jmp cg_done
+cg_rd_ok:
+    cmp ax,7
+    jae cg_hdr_ok
+    jmp cg_done
+cg_hdr_ok:
+    mov cx,word ptr csv_rec[5]
+    cmp cx,MAXMOV
+    jbe cg_lenok
+    mov cx,MAXMOV
+cg_lenok:
+    jcxz cg_nomv
+    mov bx,tmph
+    mov ah,3Fh
+    mov dx,offset movebuf
+    int 21h
+    jnc cg_mv_ok
+    jmp cg_done
+cg_mv_ok:
+    mov word ptr csv_rec[5],ax
+cg_nomv:
+    mov di,offset csvline
+    mov ax,stseed
+    call csv_u16
+    call csv_comma
+    mov al,level
+    xor ah,ah
+    inc ax
+    call csv_u16
+    call csv_comma
+    mov bl,level
+    xor bh,bh
+    mov al,sizes[bx]
+    xor ah,ah
+    push ax
+    call csv_u16
+    mov al,'x'
+    call csv_chr
+    pop ax
+    call csv_u16
+    call csv_comma
+    mov ax,optlen
+    call csv_u16
+    call csv_comma
+    mov bl,level
+    xor bh,bh
+    mov al,srhum[bx]
+    xor ah,ah
+    call csv_u16
+    call csv_comma
+    mov bl,level
+    xor bh,bh
+    mov al,srtry[bx]
+    xor ah,ah
+    call csv_u16
+    call csv_comma
+    mov bl,level
+    xor bh,bh
+    mov al,srwin[bx]
+    mov si,offset s_play
+    cmp al,1
+    je cg_fl
+    mov si,offset s_comp
+    cmp al,0
+    je cg_fl
+    mov si,offset s_tie
+cg_fl:
+    call csv_str
+    call csv_comma
+    mov si,offset s_play
+    cmp csv_rec[0],1
+    je cg_rn
+    mov si,offset s_comp
+cg_rn:
+    call csv_str
+    call csv_comma
+    mov ax,word ptr csv_rec[1]
+    call csv_u16
+    call csv_comma
+    mov ax,word ptr csv_rec[3]
+    call csv_u16
+    call csv_comma
+    mov ax,word ptr csv_rec[3]
+    sub ax,optlen
+    jnc cg_ex
+    xor ax,ax
+cg_ex:
+    call csv_u16
+    call csv_comma
+    xor ax,ax
+    mov cx,word ptr csv_rec[3]
+    cmp cx,optlen
+    jne cg_opt
+    mov ax,1
+cg_opt:
+    call csv_u16
+    call csv_comma
+    mov cx,di
+    sub cx,offset csvline
+    mov bx,csvh
+    mov dx,offset csvline
+    mov ah,40h
+    int 21h
+    mov cx,word ptr csv_rec[5]
+    jcxz cg_eol
+    mov bx,csvh
+    mov dx,offset movebuf
+    mov ah,40h
+    int 21h
+cg_eol:
+    mov bx,csvh
+    mov cx,2
+    mov dx,offset crlf
+    mov ah,40h
+    int 21h
+    jmp cg_loop
+cg_done:
+    mov bx,tmph
+    mov ah,3Eh
+    int 21h
+cg_close_csv:
+    mov bx,csvh
+    mov ah,3Eh
+    int 21h
+    call cogtmp_rst
+cg_fail:
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+cogsave endp
+
+csv_u16 proc                    ; append unsigned AX to DS:DI
+    push ax
+    push bx
+    push cx
+    push dx
+    xor cx,cx
+    mov bx,10
+cu_div:
+    xor dx,dx
+    div bx
+    push dx
+    inc cx
+    or ax,ax
+    jnz cu_div
+cu_pop:
+    pop ax
+    add al,'0'
+    mov [di],al
+    inc di
+    loop cu_pop
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+csv_u16 endp
+
+csv_str proc                    ; append ASCIIZ DS:SI to DS:DI
+    push ax
+    push si
+cs_s:
+    mov al,[si]
+    or al,al
+    jz cs_sd
+    mov [di],al
+    inc si
+    inc di
+    jmp cs_s
+cs_sd:
+    pop si
+    pop ax
+    ret
+csv_str endp
+
+csv_comma proc
+    mov al,','
+csv_chr:
+    mov [di],al
+    inc di
+    ret
+csv_comma endp
 
 end main

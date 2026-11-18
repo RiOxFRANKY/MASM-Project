@@ -82,7 +82,7 @@ impl Match {
             .and_then(|t| t.elapsed().ok())
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        let time_limit = match self.level {
+        let time_limit: u32 = match self.level {
             0 => 30,
             1 => 45,
             _ => 60,
